@@ -299,13 +299,13 @@
 ## PHASE 5 — IIRS Parallel Track — Feature F24
 
 ### 5.1 — `src/matching/iirs.py` (separate module, iirs_wac.yaml config)
-- [ ] Module NEVER invoked by `ohrc_nac` or `tmc_wac` pipeline configs
-- [ ] QUB format reader implemented
-- [ ] **Photometric correction (Hapke model) applied BEFORE any feature operation**
-- [ ] Registration band selected automatically (band nearest to WAC 643nm)
-- [ ] SIFT-class matching against WAC reference (runs standard L3-L7 pipeline)
-- [ ] Separate results directory and leaderboard rows clearly labeled "IIRS-WAC"
-- [ ] Accuracy target tracked: RMSE < 80 m absolute (sub-pixel at 80 m IIRS GSD)
+- [x] Module NEVER invoked by `ohrc_nac` or `tmc_wac` pipeline configs
+- [x] QUB format reader implemented
+- [x] **Photometric correction (Hapke model) applied BEFORE any feature operation**
+- [x] Registration band selected automatically (band nearest to WAC 643nm)
+- [x] SIFT-class matching against WAC reference (runs standard L3-L7 pipeline)
+- [x] Separate results directory and leaderboard rows clearly labeled "IIRS-WAC"
+- [x] Accuracy target tracked: RMSE < 80 m absolute (sub-pixel at 80 m IIRS GSD)
 
 ---
 
@@ -428,7 +428,7 @@
 | 2 | Preprocessing (L1) | Not started |
 | 3 | Matchers and uniformity (L2+L3) | **Done** (20/20 tests pass — 2026-08-30) |
 | 4 | Verification, refinement, products, eval (L4-L7) | **Done** (4703/4703 tests pass — 2026-08-30) |
-| 5 | IIRS parallel track | Not started |
+| 5 | IIRS parallel track | **Done** (7/7 tests pass — 2026-08-30) |
 | 6 | Provenance, tests and validation | Not started |
 | 7 | Ground truth annotation | Not started |
 | 8 | Leaderboard and system validation | Not started |

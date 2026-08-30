@@ -30,6 +30,7 @@ data/reference/nac/*
 data/reference/wac/*
 data/pairs/*
 data/processed/*
+data/scratch/*
 data/metadata/gt/*
 results/*
 
