@@ -215,16 +215,35 @@ All matchers implement one interface. Registry is config-driven. M0 always runs 
 
 ## 4. Matcher Arbitration Policy
 
+**Two execution modes — explicitly separated:**
+- **Benchmark / evaluation mode:** all eligible matchers run on every pair; the evaluation harness (L7) selects the winner per stratum empirically. Use `scripts/benchmark.py`.
+- **Production / arbitration mode:** the policy below selects one primary matcher per pair at runtime, after benchmark results have established the per-stratum winner. M0 always runs in both modes.
+
 ```
-if crater_density >= tau_c and terrain_class in {highland, polar}:
+# Production arbitration (benchmark mode runs all matchers regardless)
+if crater_density_per_km2 >= tau_c and terrain_class in {highland, polar_highland, polar}
+    and detector_validated:
     primary = M3  # crater-geometry
-elif learned_confidence_ok and gpu_available:
-    primary = M2  # LightGlue
+elif learned_confidence_ok:  # NOT gated on gpu_available
+    primary = M2  # LightGlue (CPU or GPU)
 else:
-    primary = M1  # RIFT, CPU-only illumination-robust default
+    primary = M1  # RIFT2 or LNIFT (CPU-only; flag no_validated_primary_matcher if polar)
 # M0 always runs in parallel as baseline and fallback
-if primary.inlier_ratio < floor:
+if primary.inlier_ratio < inlier_ratio_floor:
     fallback to M0 result; record in arbitration.log
+
+# Total-failure path (M0 also fails after widened t_gsd):
+#   record pair_outcome=TOTAL_FAILURE in failures.jsonl
+#   write empty registered.tif placeholder
+#   exclude pair from leaderboard RMSE aggregate
+#   include pair in failure_rate denominator -- never silently omit
+
+# Tie-break rule (two matchers statistically indistinguishable on a pair):
+#   "Indistinguishable" = RMSE difference < gt_interannotator_rmse_px AND
+#                         inlier_ratio difference < 0.05
+#   Resolution: apply preference_order list from CONFIGURATION.md arbitration block
+#   (crater > lightglue > lnift > rift2 > sift)
+#   Record tie_break=true in arbitration.log with both matcher RMSEs
 ```
 
 ---

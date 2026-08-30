@@ -53,6 +53,14 @@ pair:
   ode_timeout_s: 30                          # fallback to WAC if ODE times out
   selene_wmts_url: "https://trek.nasa.gov/moon/"  # Moon Trek WMTS; Kaguya TC 10m/MI 62m
   reference_fallback_chain: [nac_ode, wac_crop, selene_wmts]  # order is authoritative
+  selene_status: future_compatible
+    # SELENE is named in the SIH problem statement and is in the fallback chain.
+    # However, acquisition, coordinate handling, resolution reconciliation, and
+    # evaluation stratum spec for SELENE are NOT defined at the same level as NAC/WAC.
+    # A coding agent must NOT implement a full SELENE branch from this config alone.
+    # Mark as future_compatible: include in fallback chain, record ref.type=SELENE,
+    # form a separate evaluation stratum -- but do not invest in SELENE-specific
+    # calibration or GSD reconciliation until explicitly specced.
   strata:                                    # bins for reporting (never collapsed)
     lat_bins:
       equatorial:   [-45, 45]
@@ -199,6 +207,12 @@ arbitration:
   # NOTE: M2 (lightglue) eligibility is NOT gated on gpu_available -- cpu_fallback handles it
   # NOTE: M1 (rift2/lnift) is NOT the polar fallback -- flag no_validated_primary_matcher for
   #       CPU-only + low-crater-density + polar combinations
+  tie_break:
+    # Two matchers are "statistically indistinguishable" on a pair when ALL of:
+    #   |RMSE_A - RMSE_B| < gt_interannotator_rmse_px  AND
+    #   |inlier_ratio_A - inlier_ratio_B| < 0.05
+    # Resolution: apply preference_order above (highest-ranked matcher wins)
+    # Record: tie_break=true in arbitration.log with both matcher RMSEs
 ```
 
 ---
@@ -409,3 +423,5 @@ The following parameters were set from literature and need empirical validation 
 - refinement.sharpness_threshold (depends on actual patch contrast distribution in our data)
 
 Benchmark these explicitly on the 3-pair pilot before running the full dataset.
+
+**TUNE contamination rule:** All (TUNE) parameters must be tuned exclusively on the pilot / train split. The test split must not be used for tuning under any circumstance. The pilot pairs (3 pairs, see PIPELINE.md §7 checklist) are the designated tuning dataset. If a (TUNE) parameter is adjusted after looking at test-split results, that constitutes leakage and all results from that run must be discarded.

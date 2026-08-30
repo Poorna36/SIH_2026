@@ -6,6 +6,8 @@ How to verify the system is correct. This document defines what "it works" means
 
 ## 1. What Must Be Validated
 
+> **These are component-level acceptance criteria.** They govern whether individual pipeline components are correctly implemented. They are NOT the same as the system-level pass/fail criteria in §5 — per-matcher thresholds here (e.g. M1 SR ≥ 90%) and system-level thresholds in §5 (e.g. mean inlier_ratio ≥ 0.10) are legitimately different because one is a single-component bar and the other is an aggregate across all pairs and matchers.
+
 | Item | What "Pass" Means |
 |---|---|
 | End-to-end pipeline | RMSE < 1.0 px on >=50% of test pairs; no silent failures |
@@ -57,7 +59,10 @@ The test set must include:
 - >= 3 pairs from the lowest crater_density bin (tests M3 gating)
 - All sensor pair types: OHRC-NAC, OHRC-WAC, TMC-2-WAC, and IIRS-WAC (separate module)
 
-Minimum test set size: 25 pairs across the full stratification.
+Minimum test set size: **30 pairs** across the full stratification.
+(6 terrain classes × ≥5 pairs each = 30 minimum; the earlier figure of 25 was a contradiction and is corrected here.)
+
+**Partial-overlap pair eligibility:** Pairs with `partial_overlap=true` in the PairRecord are eligible for leaderboard scoring but are reported in a separate `partial_overlap` stratum. They are NEVER merged with full-overlap pairs in the primary RMSE aggregate. They count toward the failure-rate denominator.
 
 ---
 
@@ -102,9 +107,18 @@ precision = TP / (TP + FP) where TP = predicted match within 3px of GT match
 recall = TP / total_GT_matches
 matching_score = (precision + recall) / 2
 
+**gt_interannotator_rmse_px (mandatory to compute and report)**
+Computed from the "qc" partition (20% of eval points re-annotated independently):
+gt_interannotator_rmse_px = RMSE between original annotation and re-annotation for the same points.
+This is the demonstrated precision of the ground-truth itself.
+
+**Annotation precision rule:** No algorithmic accuracy claim (RMSE, pct_lt_0p5px, etc.) may be presented as meaningful if the claimed precision is smaller than `gt_interannotator_rmse_px`. Example: if gt_interannotator_rmse_px = 0.45 px, a claimed algorithmic RMSE of 0.3 px is not scientifically interpretable. Report both values together in every result table.
+
 ---
 
 ## 5. Pass/Fail Criteria (System-Level)
+
+> **These are system-level criteria**, aggregated across all pairs and matchers. They are deliberately different from the per-matcher component-level criteria in §1. A coding agent that reads both sections and interprets them as contradictory has misread the document — they operate at different levels of abstraction.
 
 The implemented system passes validation if, on the test split:
 
@@ -120,6 +134,7 @@ The implemented system passes validation if, on the test split:
 | Leakage audit | must pass | must pass |
 | Polar stratum included in report | mandatory | mandatory |
 | TMC-2–WAC (separate, non-gating) | reported separately; shortfall does NOT fail overall system | RMSE < 1.5 px |
+| gt_interannotator_rmse_px | must be computed and reported alongside every RMSE claim | < 0.3 px |
 
 Note on TMC-2–WAC row: this sensor pair is confirmed unvalidated by any paper in the corpus (ARCHITECTURE.md §8 item 6). A shortfall here reflects the experimental status of the branch, not a system failure. It must still be reported — never hidden.
 

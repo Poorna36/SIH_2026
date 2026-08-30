@@ -179,7 +179,11 @@ RIFT2 / LNIFT scale-consistency filter (applied before ANMS, inside rift.py):
   Rationale: this is the mechanism behind the D08 multi-octave scale-space novelty claim;
   without it the extension has no implementation.
 
-Arbitration logic (corrected):
+Execution mode — two modes, explicitly separated:
+- **Benchmark / evaluation mode** (`scripts/benchmark.py`): all eligible matchers run on every pair. The harness records every result and the evaluation in S9 selects the winner per stratum empirically. This is the mode used during development and reporting.
+- **Production / arbitration mode**: after the benchmark has established which matcher wins per stratum, the arbitration policy below is used to select a single primary matcher per pair at runtime. M0 always runs in both modes.
+
+Arbitration logic (production mode — corrected):
   if crater_density_per_km2 >= tau_c and terrain_class in {highland, polar_highland, polar}
       and detector_validated:
       primary = M3  # crater-geometry
@@ -190,6 +194,10 @@ Arbitration logic (corrected):
   # M0 always runs in parallel as baseline and fallback
   if primary.inlier_ratio < inlier_ratio_floor:
       fallback to M0; record in arbitration.log
+  # Total-failure path: if M0 also fails (inlier_ratio < floor after widened t_gsd):
+  #   record pair_outcome=TOTAL_FAILURE in failures.jsonl
+  #   write empty registered.tif placeholder; exclude pair from leaderboard RMSE aggregate
+  #   DO NOT silently omit: include pair in failure_rate denominator
 
 Output per matcher: results/<pair_id>/<matcher>/matches_raw.json
   = list of {src_xy, ref_xy, confidence, scale, angle, gate_skip, detector_validated} + runtime + matcher params hash
