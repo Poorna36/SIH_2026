@@ -1,0 +1,33 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+
+# Large Datasets & Images (Download via scripts/fetch_lroc_nac.py)
+data/raw/
+data/calibrated/
+data/reference/
+data/processed/
+data/pairs/
+results/
+*.IMG
+*.img
+*.TIF
+*.tif
+*.cub
+*.zip
+*.qub
+*.jsonl
+
+# Internal drafts & ignored compendiums
+ARCHITECTURE/
+ALL_IN_ONE_*.md
+BEST_ARCHITECTURE_KNOWN.md
+
+# OS / Editor artifacts
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
