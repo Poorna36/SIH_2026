@@ -207,92 +207,92 @@
 ## PHASE 4 — Geometric Verification, Refinement, Products & Evaluation (L4-L7) — Features F15-F25
 
 ### 4.1 — `src/registration/checks.py` (F15 — F2 Checks)
-- [ ] `f2_checks(matches, src_shape, ref_shape, buffer_px=10)` implemented
-- [ ] In-domain bounds check: coordinates within image bounds + 10px buffer
-- [ ] One-to-one constraint: removes duplicates, keeps highest confidence
-- [ ] Count of matches removed recorded (goes into geometry.json)
-- [ ] Called before ANY RANSAC/DEGENSAC step — verified at all call sites
+- [x] `f2_checks(matches, src_shape, ref_shape, buffer_px=10)` implemented
+- [x] In-domain bounds check: coordinates within image bounds + 10px buffer
+- [x] One-to-one constraint: removes duplicates, keeps highest confidence
+- [x] Count of matches removed recorded (goes into geometry.json)
+- [x] Called before ANY RANSAC/DEGENSAC step — verified at all call sites
 
 ### 4.2 — `src/registration/ladder.py` (F16 — DEGENSAC + Model Ladder)
-- [ ] `degensac_verify(matches, model, threshold_px, max_iter=10000, confidence=0.99999)` implemented
-- [ ] `model_ladder(matches, src_shape, ref_shape, config)` implemented — tries similarity -> affine -> homography
-- [ ] Also contains `tilewise_models(matches, src_shape, ref_shape, config)` per IMPLEMENTATION_PLAN.md (note: FEATURES.md F17 lists it as a separate `tilewise.py` — either layout is acceptable; choose one and be consistent)
-- [ ] Accepts simplest model with `inlier_RMSE <= stop_on_rmse_below` (default 1.0 px from CONFIGURATION.md)
-- [ ] `t_gsd` formula implemented: `max(0.5, gsd_ratio * 1.0)` up to 3.0 px (per CONFIGURATION.md §6)
-- [ ] Threshold widened x1.5 once on failure before tile-wise fallback
-- [ ] Tile-wise fallback triggered: then `tilewise_models` runs; then if that also fails, matcher marked failed for this pair
-- [ ] Ladder level chosen recorded in geometry.json (`ladder_level` field)
-- [ ] `t_gsd_used` and `stop_on_rmse_below` correctly distinguished (two separate thresholds — see INTERFACES.md §3 CLARIFICATION)
-- [ ] **Gate (S6):** `inlier_ratio >= 0.05` AND `>= 20 inliers`; on failure: widen t_gsd x1.5 once, retry; then tile-wise fallback; then matcher marked failed (per PIPELINE.md S6 and FEATURES.md F16)
+- [x] `degensac_verify(matches, model, threshold_px, max_iter=10000, confidence=0.99999)` implemented
+- [x] `model_ladder(matches, src_shape, ref_shape, config)` implemented — tries similarity -> affine -> homography
+- [x] Also contains `tilewise_models(matches, src_shape, ref_shape, config)` in `src/registration/tilewise.py`
+- [x] Accepts simplest model with `inlier_RMSE <= stop_on_rmse_below` (default 1.0 px from CONFIGURATION.md)
+- [x] `t_gsd` formula implemented: `max(0.5, gsd_ratio * 1.0)` up to 3.0 px (per CONFIGURATION.md §6)
+- [x] Threshold widened x1.5 once on failure before tile-wise fallback
+- [x] Tile-wise fallback triggered: then `tilewise_models` runs; then if that also fails, matcher marked failed for this pair
+- [x] Ladder level chosen recorded in geometry.json (`ladder_level` field)
+- [x] `t_gsd_used` and `stop_on_rmse_below` correctly distinguished (two separate thresholds — see INTERFACES.md §3 CLARIFICATION)
+- [x] **Gate (S6):** `inlier_ratio >= 0.05` AND `>= 20 inliers`; on failure: widen t_gsd x1.5 once, retry; then tile-wise fallback; then matcher marked failed (per PIPELINE.md S6 and FEATURES.md F16)
 
 ### 4.3 — Tile-wise Models (F17)
-> **File placement:** IMPLEMENTATION_PLAN.md puts `tilewise_models()` inside `ladder.py`; FEATURES.md F17 says `src/registration/tilewise.py`. Either is fine — decide once and keep consistent. The checklist below applies regardless of which file it lives in.
-- [ ] `tilewise_models(matches, src_shape, ref_shape, config)` implemented — 512px tiles, 50% overlap
-- [ ] Trigger condition: `latitude_center_deg > +-55` OR terrain relief estimated high (per CONFIGURATION.md §6 `trigger_latitude_deg: 55`)
-- [ ] Minimum 12 inliers per tile required (per CONFIGURATION.md §6 `min_inliers_per_tile: 12`)
-- [ ] Tile overlap = 256px (50% of 512px tile — per CONFIGURATION.md §6 `overlap_px: 256`)
-- [ ] **Gaussian boundary blending (MANDATORY formula):** `w_T(x) = exp(-||x-c_T||^2 / (2*sigma^2))` with sigma=256px; weights normalized to sum 1 — NOT uniform averaging (per FEATURES.md F17)
-- [ ] `tilewise=True`, `trigger_reason`, `tile_models` array stored in geometry.json
+> **File placement:** `src/registration/tilewise.py` (standalone module).
+- [x] `tilewise_models(matches, src_shape, ref_shape, config)` implemented — 512px tiles, 50% overlap
+- [x] Trigger condition: `latitude_center_deg > +-55` OR terrain relief estimated high (per CONFIGURATION.md §6 `trigger_latitude_deg: 55`)
+- [x] Minimum 12 inliers per tile required (per CONFIGURATION.md §6 `min_inliers_per_tile: 12`)
+- [x] Tile overlap = 256px (50% of 512px tile — per CONFIGURATION.md §6 `overlap_px: 256`)
+- [x] **Gaussian boundary blending (MANDATORY formula):** `w_T(x) = exp(-||x-c_T||^2 / (2*sigma^2))` with sigma=256px; weights normalized to sum 1 — NOT uniform averaging (per FEATURES.md F17)
+- [x] `tilewise=True`, `trigger_reason`, `tile_models` array stored in geometry.json
 
 ### 4.4 — `src/registration/declustering.py` (F18 — GCP Declustering)
-- [ ] `decluster(inliers, min_spacing_px, image_shape)` implemented — grid-nearest-centre method
-- [ ] **GSD scaling (MANDATORY):** `min_spacing_px` scaled by `(ref_gsd_m / base_gsd_m)` where `base_gsd_m = 0.5`
-- [ ] `gsd_scale_factor` recorded in geometry.json
-- [ ] `zscore_filter(inliers, threshold=3.0, min_gcps=20)` — only runs when > 20 GCPs present
+- [x] `decluster(inliers, min_spacing_px, image_shape)` implemented — grid-nearest-centre method
+- [x] **GSD scaling (MANDATORY):** `min_spacing_px` scaled by `(ref_gsd_m / base_gsd_m)` where `base_gsd_m = 0.5`
+- [x] `gsd_scale_factor` recorded in geometry.json
+- [x] `zscore_filter(inliers, threshold=3.0, min_gcps=20)` — only runs when > 20 GCPs present
 
 ### 4.5 — `src/refinement/local.py` (F19 — Sub-pixel Refinement)
-- [ ] `refine_match(...)` implemented with window_px=32, method='ncc', apodization='tukey', pyramid_levels=3, sharpness_threshold=0.15
-- [ ] **Apodization is ONLY Tukey or Gaussian — Blackman is NEVER used** (hard config check in place)
-- [ ] Gaussian-pyramid coarse-to-fine; integer peak -> 2D paraboloid sub-pixel fit
-- [ ] `paraboloid_peak(corr_surface)` implemented — returns (dx, dy, sharpness)
-- [ ] **Second-peak rejection (MANDATORY):** rejects if window variance < tau_v OR second peak > 0.80 x primary peak
-- [ ] refine_success flag, sharpness, second_peak_ratio stored per match
-- [ ] RMSE before and after refinement reported in matches_refined.json
-- [ ] **Gate:** >= 70% of inliers refine successfully; else `partial_refinement=true` flagged; pair NOT discarded
+- [x] `refine_match(...)` implemented with window_px=32, method='ncc', apodization='tukey', pyramid_levels=3, sharpness_threshold=0.15
+- [x] **Apodization is ONLY Tukey or Gaussian — Blackman is NEVER used** (hard config check in place)
+- [x] Gaussian-pyramid coarse-to-fine; integer peak -> 2D paraboloid sub-pixel fit
+- [x] `paraboloid_peak(corr_surface)` implemented — returns (dx, dy, sharpness)
+- [x] **Second-peak rejection (MANDATORY):** rejects if window variance < tau_v OR second peak > 0.80 x primary peak
+- [x] refine_success flag, sharpness, second_peak_ratio stored per match
+- [x] RMSE before and after refinement reported in matches_refined.json
+- [x] **Gate:** >= 70% of inliers refine successfully; else `partial_refinement=true` flagged; pair NOT discarded
 
 ### 4.6 — `scripts/register.py` (S8 — Product Generation — F20, F21)
-- [ ] CLI: `--pair`, `--matcher`, `--geometry`, `--matches` arguments parsed
-- [ ] Applies model (or tile-wise blend) to warp source -> reference grid
-- [ ] Outputs `registered.tif` (GeoTIFF with reference CRS)
-- [ ] Outputs `match_points.csv` (columns: src_col, src_row, ref_col, ref_row, lon, lat, residual_px)
-- [ ] Outputs `match_points.gcp` (loadable by `gdal_translate -gcp`)
-- [ ] QC artifact: `qc_checkerboard.png` (64px tiles, source/registered interleaved)
-- [ ] QC artifact: `qc_matches.png` (green <0.5px, yellow 0.5-1.0px, red >1.0px residual)
-- [ ] QC artifact: `qc_residuals.png` (Gaussian heat map, sigma=3px per match)
-- [ ] **Gate:** warp valid >= 90% of footprint; else partial_registration_extent reported
-- [ ] Exit codes implemented
+- [x] CLI: `--pair`, `--matcher`, `--geometry`, `--matches` arguments parsed
+- [x] Applies model (or tile-wise blend) to warp source -> reference grid
+- [x] Outputs `registered.tif` (GeoTIFF with reference CRS)
+- [x] Outputs `match_points.csv` (columns: src_col, src_row, ref_col, ref_row, lon, lat, residual_px)
+- [x] Outputs `match_points.gcp` (loadable by `gdal_translate -gcp`)
+- [x] QC artifact: `qc_checkerboard.png` (64px tiles, source/registered interleaved)
+- [x] QC artifact: `qc_matches.png` (green <0.5px, yellow 0.5-1.0px, red >1.0px residual)
+- [x] QC artifact: `qc_residuals.png` (Gaussian heat map, sigma=3px per match)
+- [x] **Gate:** warp valid >= 90% of footprint; else partial_registration_extent reported
+- [x] Exit codes implemented
 
 ### 4.7 — `src/evaluation/metrics.py` (F22)
-- [ ] `rmse(predicted_ref_xy, gt_ref_xy)` — computed ONLY on GT partition="eval" checkpoints
-- [ ] `pct_lt_1px(residuals)` implemented
-- [ ] `pct_lt_0p5px(residuals)` implemented
-- [ ] `medae(residuals)` implemented
-- [ ] `spatial_coverage(match_xy, image_shape, n=8)` — `occupied_cells / valid_cells`
-- [ ] `grid_density_std(match_xy, image_shape, n=8)` implemented
-- [ ] `refinement_gain(rmse_coarse, rmse_refined)` implemented
-- [ ] `gt_interannotator_rmse_px(original, reannotated)` — from "qc" partition
+- [x] `rmse(predicted_ref_xy, gt_ref_xy)` — computed ONLY on GT partition="eval" checkpoints
+- [x] `pct_lt_1px(residuals)` implemented
+- [x] `pct_lt_0p5px(residuals)` implemented
+- [x] `medae(residuals)` implemented
+- [x] `spatial_coverage(match_xy, image_shape, n=8)` — `occupied_cells / valid_cells`
+- [x] `grid_density_std(match_xy, image_shape, n=8)` implemented
+- [x] `refinement_gain(rmse_coarse, rmse_refined)` implemented
+- [x] `gt_interannotator_rmse_px(original, reannotated)` — from "qc" partition
 
 ### 4.8 — `src/evaluation/aggregate.py` (F22)
-- [ ] Reads all `pair_results/*.json`; aggregates by (matcher x sensor_pair x stratum)
-- [ ] Computes mean and median per metric
-- [ ] Writes `results/leaderboard.csv` atomically (write to temp, rename)
-- [ ] Polar and high-latitude strata NEVER aggregated away; always in separate rows
-- [ ] SELENE pairs form a separate stratum; never merged with NAC/WAC rows
-- [ ] `split` column always present; no test-split leakage from train
+- [x] Reads all `pair_results/*.json`; aggregates by (matcher x sensor_pair x stratum)
+- [x] Computes mean and median per metric
+- [x] Writes `results/leaderboard.csv` atomically (write to temp, rename)
+- [x] Polar and high-latitude strata NEVER aggregated away; always in separate rows
+- [x] SELENE pairs form a separate stratum; never merged with NAC/WAC rows
+- [x] `split` column always present; no test-split leakage from train
 
 ### 4.9 — `src/evaluation/leakage_audit.py` (F22)
-- [ ] Verifies no `geo_cell` overlaps between train/test splits
-- [ ] Checks: no pair in both splits; no geo_cell in both splits; gt_path only for test pairs; leaderboard split column matches manifest
-- [ ] Exits non-zero (code 4) and writes NO leaderboard output if audit fails
-- [ ] `python -m src.evaluation.leakage_audit --manifest data/pairs/manifest.jsonl` works as CLI
+- [x] Verifies no `geo_cell` overlaps between train/test splits
+- [x] Checks: no pair in both splits; no geo_cell in both splits; gt_path only for test pairs; leaderboard split column matches manifest
+- [x] Exits non-zero (code 4) and writes NO leaderboard output if audit fails
+- [x] `python -m src.evaluation.leakage_audit --manifest data/pairs/manifest.jsonl` works as CLI
 
 ### 4.10 — `src/evaluation/arbitration.py` (F23)
-- [ ] Determines winning matcher per pair per the arbitration policy
-- [ ] **Correct policy:** M3 if crater gate + detector_validated -> M2 (NOT gated on GPU) -> M1 (flag polar) -> M0 fallback
-- [ ] `inlier_ratio_floor` check triggers M0 fallback; recorded in arbitration.log
-- [ ] Total-failure path: records `pair_outcome=TOTAL_FAILURE` in failures.jsonl; writes empty registered.tif placeholder; pair included in failure-rate denominator (NEVER silently omitted)
-- [ ] **Tie-break rule:** `abs(RMSE_A - RMSE_B) < gt_interannotator_rmse_px AND abs(inlier_ratio_A - inlier_ratio_B) < 0.05` -> apply preference_order; record tie_break=true in log
-- [ ] `results/arbitration.log` has one entry per pair
+- [x] Determines winning matcher per pair per the arbitration policy
+- [x] **Correct policy:** M3 if crater gate + detector_validated -> M2 (NOT gated on GPU) -> M1 (flag polar) -> M0 fallback
+- [x] `inlier_ratio_floor` check triggers M0 fallback; recorded in arbitration.log
+- [x] Total-failure path: records `pair_outcome=TOTAL_FAILURE` in failures.jsonl; writes empty registered.tif placeholder; pair included in failure-rate denominator (NEVER silently omitted)
+- [x] **Tie-break rule:** `abs(RMSE_A - RMSE_B) < gt_interannotator_rmse_px AND abs(inlier_ratio_A - inlier_ratio_B) < 0.05` -> apply preference_order; record tie_break=true in log
+- [x] `results/arbitration.log` has one entry per pair
 
 ---
 
@@ -427,7 +427,7 @@
 | 1 | Data and geometry layer (L0) | Not started |
 | 2 | Preprocessing (L1) | Not started |
 | 3 | Matchers and uniformity (L2+L3) | **Done** (20/20 tests pass — 2026-08-30) |
-| 4 | Verification, refinement, products, eval (L4-L7) | Not started |
+| 4 | Verification, refinement, products, eval (L4-L7) | **Done** (4703/4703 tests pass — 2026-08-30) |
 | 5 | IIRS parallel track | Not started |
 | 6 | Provenance, tests and validation | Not started |
 | 7 | Ground truth annotation | Not started |
