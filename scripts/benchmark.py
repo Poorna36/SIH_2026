@@ -1,0 +1,445 @@
+"""
+scripts/benchmark.py
+====================
+S4 + S5 entry-point — correspondence matching and uniformity selection.
+
+Orchestrates the matcher registry loop over a pair manifest, applies gates,
+produces matches_raw.json and matches_selected.json + selection_stats.json.
+
+Exit codes (PIPELINE.md §8 — applies to all pipeline scripts):
+  0 — success (all pairs processed)
+  1 — gate failures logged; non-failed pairs completed
+  2 — config error
+  3 — env error (missing package/dependency)
+  4 — leakage audit failed
+
+Usage
+-----
+  python scripts/benchmark.py \\
+      --pair data/pairs/manifest.jsonl \\
+      --matchers configs/matchers.yaml \\
+      --config configs/ohrc_nac.yaml \\
+      --out results/ \\
+      [--splits train] [--parallel 1] [--resume] [--force] [-v]
+
+References: ARCHITECTURE.md §3, PIPELINE.md S4-S5, FEATURES.md F14
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import logging
+import os
+import sys
+import time
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+import numpy as np
+
+# ── Logging setup ─────────────────────────────────────────────────────────────
+
+logging.basicConfig(
+    format="[%(asctime)s %(levelname)s] %(message)s",
+    datefmt="%H:%M:%S",
+    level=logging.INFO,
+)
+log = logging.getLogger("benchmark")
+
+
+# ── Matcher registry ─────────────────────────────────────────────────────────
+
+def _build_registry(matchers_cfg: Dict[str, Any]) -> Dict[str, Any]:
+    """Lazily import and instantiate only the matchers listed in config."""
+    from src.matching.sift import SIFTMatcher
+    from src.matching.rift import RIFT2Matcher
+    from src.matching.lnift import LNIFTMatcher
+    from src.matching.lightglue import LightGlueMatcher
+    from src.matching.crater import CraterMatcher
+
+    _classes = {
+        "sift": SIFTMatcher,
+        "rift2": RIFT2Matcher,
+        "lnift": LNIFTMatcher,
+        "lightglue": LightGlueMatcher,
+        "crater": CraterMatcher,
+    }
+
+    registry: Dict[str, Any] = {}
+    for mid, cls in _classes.items():
+        cfg = matchers_cfg.get(mid, {})
+        if cfg.get("enabled", True):
+            try:
+                registry[mid] = cls(config=cfg)
+                log.debug("Registered matcher: %s", mid)
+            except Exception as exc:
+                log.warning("Could not load matcher %s: %s", mid, exc)
+    return registry
+
+
+# ── Output helpers ────────────────────────────────────────────────────────────
+
+def _output_dir(out_root: Path, pair_id: str, matcher_id: str) -> Path:
+    d = out_root / pair_id / matcher_id
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _write_json(path: Path, data: dict) -> None:
+    path.write_text(json.dumps(data, indent=2, default=_json_default))
+
+
+def _json_default(obj: Any) -> Any:
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    if isinstance(obj, (np.integer,)):
+        return int(obj)
+    if isinstance(obj, (np.floating,)):
+        return float(obj)
+    return str(obj)
+
+
+def _output_exists(out_dir: Path) -> bool:
+    return (out_dir / "matches_selected.json").exists()
+
+
+# ── Selection pipeline (S5) ───────────────────────────────────────────────────
+
+def _run_selection(
+    result,        # MatchResult
+    matcher_id: str,
+    pair_meta: dict,
+    cfg: dict,
+    verbose: bool = False,
+) -> tuple:
+    """
+    Apply L3 uniformity pipeline to raw MatchResult.
+    Returns (src_xy, ref_xy, confidence, stats_dict).
+    """
+    from src.selection.spatial import (
+        confidence_filter,
+        grid_cap,
+        coverage_greedy,
+        one_to_one,
+        selection_stats,
+    )
+
+    sel_cfg = cfg.get("selection", {})
+    n = int(sel_cfg.get("n", 8))
+    cap = int(sel_cfg.get("cap", 5))
+    budget = int(sel_cfg.get("budget", 250))
+    cov_min = float(sel_cfg.get("coverage_min", 0.60))
+
+    src_w = pair_meta.get("src_width", None)
+    src_h = pair_meta.get("src_height", None)
+    img_shape = (src_h, src_w) if src_h and src_w else None
+
+    sx, rx, conf = result.src_xy, result.ref_xy, result.confidence
+
+    # Step 1: confidence filter
+    sx, rx, conf = confidence_filter(sx, rx, conf, matcher_id)
+
+    # Step 2: grid cap
+    sx, rx, conf = grid_cap(sx, rx, conf, n=n, cap=cap, image_shape=img_shape)
+
+    # Step 3: coverage-greedy bisection
+    sx, rx, conf = coverage_greedy(sx, rx, conf, budget=budget,
+                                    min_coverage=cov_min, n=n,
+                                    image_shape=img_shape)
+
+    # Step 4: one-to-one deduplication
+    sx, rx, conf = one_to_one(sx, rx, conf)
+
+    stats = selection_stats(
+        result.src_xy, sx,
+        result.confidence, conf,
+        image_shape=img_shape, n=n,
+    )
+    if verbose:
+        log.info(
+            "  selection: %d -> %d | cov=%.2f | std=%.2f",
+            stats["n_before"], stats["n_after"],
+            stats["coverage_after"], stats["grid_density_std_after"],
+        )
+    return sx, rx, conf, stats
+
+
+# ── Per-pair per-matcher runner ───────────────────────────────────────────────
+
+def _run_pair_matcher(
+    pair: dict,
+    matcher,
+    out_root: Path,
+    cfg: dict,
+    resume: bool,
+    force: bool,
+    verbose: bool,
+) -> Dict[str, Any]:
+    """
+    Run one matcher on one pair. Returns a summary dict.
+    Writes outputs to results/<pair_id>/<matcher_id>/.
+    Failures written to failures.jsonl (never crash the loop).
+    """
+    pair_id = pair["pair_id"]
+    mid = matcher.matcher_id
+    out_dir = _output_dir(out_root, pair_id, mid)
+
+    # Checkpointing — S4/S5 re-runs only if output missing or --force
+    if resume and not force and _output_exists(out_dir):
+        log.info("  SKIP (checkpointed): %s / %s", pair_id, mid)
+        return {"pair_id": pair_id, "matcher": mid, "status": "skipped_checkpoint"}
+
+    t0 = time.time()
+
+    # ── Load preprocessed images ──────────────────────────────────────────────
+    src_path = pair.get("src_processed")
+    ref_path = pair.get("ref_processed")
+    if not src_path or not ref_path:
+        reason = "missing_processed_image_paths"
+        _log_failure(out_root, pair_id, mid, "S4", reason)
+        return {"pair_id": pair_id, "matcher": mid, "status": "failed", "reason": reason}
+
+    try:
+        import cv2
+        src_img = cv2.imread(str(src_path), cv2.IMREAD_GRAYSCALE)
+        ref_img = cv2.imread(str(ref_path), cv2.IMREAD_GRAYSCALE)
+        if src_img is None or ref_img is None:
+            raise FileNotFoundError("Could not read processed images")
+    except Exception as exc:
+        reason = f"image_load_failed: {exc}"
+        _log_failure(out_root, pair_id, mid, "S4", reason)
+        return {"pair_id": pair_id, "matcher": mid, "status": "failed", "reason": reason}
+
+    gsd_ratio = float(pair.get("gsd_ratio", 1.0))
+
+    # ── M3 gate check BEFORE running (FEATURES.md F13) ───────────────────────
+    if mid in ("crater", "crater_hough"):
+        from src.matching.crater import CraterMatcher
+        gate_ok, gate_reason = CraterMatcher.check_gate(
+            density_src=float(pair.get("crater_density_per_km2", 0.0)),
+            density_ref=float(pair.get("ref_crater_density", 0.0)),
+            terrain_src=pair.get("terrain_class", "unknown"),
+            terrain_ref=pair.get("ref_terrain_class", "unknown"),
+            tau_c=matcher.tau_c,
+            allowed_terrain=matcher.allowed_terrain,
+        )
+        if not gate_ok:
+            result_raw = {"gate_skip": True, "gate_reason": gate_reason,
+                          "pair_id": pair_id, "matcher": mid}
+            _write_json(out_dir / "matches_raw.json", result_raw)
+            log.info("  M3 gate FAIL (%s): %s", pair_id, gate_reason)
+            return {"pair_id": pair_id, "matcher": mid, "status": "gate_skip",
+                    "reason": gate_reason}
+
+    # ── Run matcher ───────────────────────────────────────────────────────────
+    match_kwargs: dict = {}
+    if mid in ("crater", "crater_hough"):
+        match_kwargs = {
+            "crater_density_src": float(pair.get("crater_density_per_km2", 0.0)),
+            "crater_density_ref": float(pair.get("ref_crater_density", 0.0)),
+            "terrain_src": pair.get("terrain_class", "unknown"),
+            "terrain_ref": pair.get("ref_terrain_class", "unknown"),
+        }
+
+    result = matcher.match(src_img, ref_img, gsd_ratio=gsd_ratio, **match_kwargs)
+
+    # Write matches_raw.json
+    raw_out = {
+        "pair_id": pair_id,
+        "matcher": mid,
+        "n_raw": result.count,
+        "runtime_s": round(result.runtime_s, 4),
+        "src_xy": result.src_xy.tolist(),
+        "ref_xy": result.ref_xy.tolist(),
+        "confidence": result.confidence.tolist(),
+        "matcher_params": result.matcher_params,
+    }
+    _write_json(out_dir / "matches_raw.json", raw_out)
+
+    # ── Gate S4: >= 150 candidate matches ────────────────────────────────────
+    if result.count < 150:
+        reason = f"S4_gate_fail: {result.count} < 150 candidates"
+        _log_failure(out_root, pair_id, mid, "S4", reason, n_raw=result.count)
+        log.warning("  [S4 FAIL] %s / %s: %s", pair_id, mid, reason)
+        return {"pair_id": pair_id, "matcher": mid, "status": "s4_fail", "reason": reason}
+
+    # ── Selection pipeline (S5) ───────────────────────────────────────────────
+    sel_cfg = cfg.get("selection", {})
+    cov_min = float(sel_cfg.get("coverage_min", 0.60))
+    n_grid = int(sel_cfg.get("n", 8))
+
+    sx, rx, conf, stats = _run_selection(result, mid, pair, cfg, verbose)
+
+    # ── Gate S5: coverage >= 0.60 AND >= 25 matches ──────────────────────────
+    if stats["coverage_after"] < cov_min or stats["n_after"] < 25:
+        # Relax cap once (double cap) and retry
+        log.info("  [S5 soft] %s / %s: coverage=%.2f n=%d — relaxing cap",
+                 pair_id, mid, stats["coverage_after"], stats["n_after"])
+        from src.selection.spatial import grid_cap, one_to_one, selection_stats
+        sx2, rx2, conf2 = grid_cap(result.src_xy, result.ref_xy, result.confidence,
+                                    n=n_grid, cap=int(sel_cfg.get("cap", 5)) * 2)
+        sx2, rx2, conf2 = one_to_one(sx2, rx2, conf2)
+        stats2 = selection_stats(result.src_xy, sx2, result.confidence, conf2)
+
+        if stats2["coverage_after"] < cov_min or stats2["n_after"] < 25:
+            reason = (f"S5_gate_fail: coverage={stats2['coverage_after']:.2f} "
+                      f"n={stats2['n_after']}")
+            _log_failure(out_root, pair_id, mid, "S5", reason, **stats2)
+            log.warning("  [S5 FAIL] %s / %s: %s", pair_id, mid, reason)
+            return {"pair_id": pair_id, "matcher": mid, "status": "s5_fail",
+                    "reason": reason}
+        sx, rx, conf, stats = sx2, rx2, conf2, stats2
+
+    # ── Write outputs ─────────────────────────────────────────────────────────
+    selected_out = {
+        "pair_id": pair_id,
+        "matcher": mid,
+        "n_selected": int(len(sx)),
+        "src_xy": sx.tolist(),
+        "ref_xy": rx.tolist(),
+        "confidence": conf.tolist(),
+        "selection_stats": stats,
+        "gsd_ratio": gsd_ratio,
+    }
+    _write_json(out_dir / "matches_selected.json", selected_out)
+    _write_json(out_dir / "selection_stats.json", stats)
+
+    elapsed = round(time.time() - t0, 3)
+    log.info("  OK %s / %s: n=%d cov=%.2f (%.1fs)",
+             pair_id, mid, len(sx), stats["coverage_after"], elapsed)
+    return {"pair_id": pair_id, "matcher": mid, "status": "ok",
+            "n_selected": int(len(sx)), "elapsed_s": elapsed}
+
+
+def _log_failure(
+    out_root: Path,
+    pair_id: str,
+    matcher: str,
+    stage: str,
+    reason: str,
+    **extra,
+) -> None:
+    """Append one line to failures.jsonl (never overwrite)."""
+    entry = {
+        "pair_id": pair_id,
+        "matcher": matcher,
+        "stage": stage,
+        "reason": reason,
+        **extra,
+    }
+    failures_path = out_root / "failures.jsonl"
+    with failures_path.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(entry) + "\n")
+
+
+# ── CLI ───────────────────────────────────────────────────────────────────────
+
+def _parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
+    p = argparse.ArgumentParser(
+        prog="benchmark.py",
+        description="S4+S5: matcher registry loop + spatial uniformity selection",
+    )
+    p.add_argument("--pair", "--manifest", required=True,
+                   help="Path to data/pairs/manifest.jsonl")
+    p.add_argument("--matchers", default="configs/matchers.yaml",
+                   help="Path to matchers.yaml config")
+    p.add_argument("--config", default="configs/ohrc_nac.yaml",
+                   help="Pipeline config YAML")
+    p.add_argument("--out", default="results",
+                   help="Output root directory")
+    p.add_argument("--splits", nargs="*", default=["train"],
+                   help="Which manifest splits to process (train/test)")
+    p.add_argument("--parallel", type=int, default=1,
+                   help="Number of parallel workers (1 = sequential)")
+    p.add_argument("--resume", action="store_true",
+                   help="Skip pairs where outputs already exist")
+    p.add_argument("--force", action="store_true",
+                   help="Re-run even if outputs exist")
+    p.add_argument("-v", "--verbose", action="store_true")
+    return p.parse_args(argv)
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    args = _parse_args(argv)
+
+    if args.verbose:
+        log.setLevel(logging.DEBUG)
+
+    # ── Load config ───────────────────────────────────────────────────────────
+    try:
+        import yaml
+        with open(args.config) as f:
+            cfg = yaml.safe_load(f) or {}
+        with open(args.matchers) as f:
+            matchers_cfg = yaml.safe_load(f) or {}
+    except FileNotFoundError as exc:
+        log.error("Config file not found: %s", exc)
+        return 2
+    except Exception as exc:
+        log.error("Config parse error: %s", exc)
+        return 2
+
+    # ── Load manifest ─────────────────────────────────────────────────────────
+    manifest_path = Path(args.pair)
+    if not manifest_path.exists():
+        log.error("Manifest not found: %s", manifest_path)
+        return 2
+
+    pairs: List[dict] = []
+    with manifest_path.open() as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                rec = json.loads(line)
+                if not args.splits or rec.get("split") in args.splits:
+                    pairs.append(rec)
+
+    if not pairs:
+        log.warning("No pairs found for splits %s in %s", args.splits, manifest_path)
+        return 0
+
+    log.info("Loaded %d pairs, splits=%s", len(pairs), args.splits)
+
+    # ── Build matcher registry ────────────────────────────────────────────────
+    try:
+        registry = _build_registry(matchers_cfg)
+    except ImportError as exc:
+        log.error("Dependency missing: %s", exc)
+        return 3
+
+    log.info("Active matchers: %s", list(registry.keys()))
+
+    # ── M0 (SIFT) must always be in registry ─────────────────────────────────
+    if "sift" not in registry:
+        log.error("M0 (sift) not in registry — check matchers.yaml")
+        return 2
+
+    out_root = Path(args.out)
+    out_root.mkdir(parents=True, exist_ok=True)
+
+    # ── Main loop ─────────────────────────────────────────────────────────────
+    n_ok = n_fail = n_skip = 0
+    for pair in pairs:
+        pair_id = pair.get("pair_id", "unknown")
+        log.info("Pair: %s", pair_id)
+
+        for mid, matcher in registry.items():
+            result_summary = _run_pair_matcher(
+                pair, matcher, out_root, cfg,
+                resume=args.resume, force=args.force, verbose=args.verbose,
+            )
+            status = result_summary.get("status", "")
+            if status == "ok":
+                n_ok += 1
+            elif status == "skipped_checkpoint":
+                n_skip += 1
+            else:
+                n_fail += 1
+
+    log.info("Done — ok=%d fail=%d skip=%d", n_ok, n_fail, n_skip)
+
+    return 1 if n_fail > 0 else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
