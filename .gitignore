@@ -1,17 +1,25 @@
-# Byte-compiled / optimized / DLL files
+# Byte-compiled / cache files
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .pytest_cache/
 
-# Large Datasets & Images (Download via scripts/fetch_lroc_nac.py)
-data/raw/
-data/calibrated/
-data/reference/
-data/processed/
-data/pairs/
-results/
+# Ignore contents of data & results directories
+data/raw/*
+data/calibrated/*
+data/reference/nac/*
+data/reference/wac/*
+data/pairs/*
+data/processed/*
+data/metadata/gt/*
+results/*
+
+# Explicitly track directory placeholders and metadata templates
+!.gitkeep
+!data/metadata/roi_manifest.csv
+
+# Large Datasets, Images & Binary Extensions (Safety fallback)
 *.IMG
 *.img
 *.TIF
