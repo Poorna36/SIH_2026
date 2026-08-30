@@ -4,8 +4,26 @@ __pycache__/
 *$py.class
 *.so
 .pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
 
-# Ignore contents of data & results directories
+# Virtual Environments
+.venv/
+venv/
+env/
+ENV/
+.conda/
+
+# OS / Editor artifacts
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Data & results directories (ignore large binaries, track placeholders)
 data/raw/*
 data/calibrated/*
 data/reference/nac/*
@@ -15,11 +33,11 @@ data/processed/*
 data/metadata/gt/*
 results/*
 
-# Explicitly track directory placeholders and metadata templates
+# Explicitly track directory placeholders and essential metadata
 !.gitkeep
 !data/metadata/roi_manifest.csv
 
-# Large Datasets, Images & Binary Extensions (Safety fallback)
+# Large Datasets, Images & Sensor Binaries (Safety fallback)
 *.IMG
 *.img
 *.TIF
@@ -28,14 +46,22 @@ results/*
 *.zip
 *.qub
 *.jsonl
+*.tar
+*.tar.gz
+
+# SPICE Kernels & Navigation files
+*.bc
+*.bsp
+*.tpc
+*.ti
+
+# Deep Learning weights & models
+*.pt
+*.pth
+*.onnx
+weights/
 
 # Internal drafts & ignored compendiums
 ARCHITECTURE/
 ALL_IN_ONE_*.md
 BEST_ARCHITECTURE_KNOWN.md
-
-# OS / Editor artifacts
-.DS_Store
-Thumbs.db
-.vscode/
-.idea/
