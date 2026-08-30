@@ -424,6 +424,10 @@ def fetch_wac_for_footprint(
     max_lon: float,
     output_dir: str = PATHS["wac"],
     limit: int = 5,
+    download_img: bool = False,
+    max_incidence_deg: Optional[float] = None,
+    min_res_m: Optional[float] = None,
+    max_res_m: Optional[float] = None,
 ) -> list[dict]:
     """
     Query ODE and download calibrated LRO WAC products for a bounding box.
@@ -432,7 +436,26 @@ def fetch_wac_for_footprint(
     out = Path(output_dir) / "wac"
     out.mkdir(parents=True, exist_ok=True)
 
-    products = query_ode_nac(min_lat, max_lat, min_lon, max_lon, limit, "CDRWAC4")
+    products = query_ode_nac(min_lat, max_lat, min_lon, max_lon, limit * OVERQUERY, "CDRWAC4")
+
+    if max_incidence_deg is not None:
+        before = len(products)
+        products = [
+            p for p in products
+            if _safe_float(p.get("Incidence_angle"), 999.0) <= max_incidence_deg
+        ]
+        print("  🔍 WAC filtered incidence <= " + str(max_incidence_deg) + " deg: " + str(before) + " -> " + str(len(products)))
+
+    if min_res_m is not None:
+        products = [p for p in products
+                    if _safe_float(p.get("Map_resolution"), 0.0) >= min_res_m]
+    if max_res_m is not None:
+        products = [p for p in products
+                    if _safe_float(p.get("Map_resolution"), 0.0) <= max_res_m]
+
+    products.sort(key=lambda p: (_safe_float(p.get("Incidence_angle"), 999.0),
+                                 _safe_float(p.get("Map_resolution"), 999.0)))
+    products = products[:limit]
 
     results = []
     already = _manifest_ids(out / "manifest.jsonl")
@@ -442,7 +465,7 @@ def fetch_wac_for_footprint(
         if pid in already:
             print("  skip " + pid + " already in manifest")
             continue
-        meta = download_product(p, out)
+        meta = download_product(p, out, download_img)
         meta["ref_type"] = "WAC"
         results.append(meta)
 
@@ -462,6 +485,10 @@ def fetch_from_manifest_csv(
     product_type: str = "nac",
     output_base: str = PATHS["nac"],
     limit: int = 5,
+    download_img: bool = False,
+    max_incidence_deg: Optional[float] = None,
+    min_res_m: Optional[float] = None,
+    max_res_m: Optional[float] = None,
 ):
     """Batch-download for multiple ROIs defined in a CSV manifest."""
     print(f"\n📂 Batch mode: reading {csv_path}")
@@ -481,8 +508,12 @@ def fetch_from_manifest_csv(
                 max_lat=float(row["max_lat"]),
                 min_lon=float(row["min_lon"]),
                 max_lon=float(row["max_lon"]),
-                output_dir=os.path.join(output_base, roi),
+                output_dir=output_base,
                 limit=limit,
+                download_img=download_img,
+                max_incidence_deg=max_incidence_deg,
+                min_res_m=min_res_m,
+                max_res_m=max_res_m,
             )
 
 
@@ -542,7 +573,13 @@ Examples:
     print("=" * 60)
 
     if args.manifest:
-        fetch_from_manifest_csv(args.manifest, args.product, output, args.limit)
+        fetch_from_manifest_csv(
+            args.manifest, args.product, output, args.limit,
+            download_img=args.download_img,
+            max_incidence_deg=args.max_incidence,
+            min_res_m=args.min_res,
+            max_res_m=args.max_res,
+        )
     elif args.product == "nac":
         fetch_nac_for_footprint(
             min_lat=args.min_lat,
@@ -564,6 +601,10 @@ Examples:
             max_lon=args.max_lon,
             output_dir=output,
             limit=args.limit,
+            download_img=args.download_img,
+            max_incidence_deg=args.max_incidence,
+            min_res_m=args.min_res,
+            max_res_m=args.max_res,
         )
 
     print("\n✅ Done!")
