@@ -179,6 +179,8 @@ def decluster_and_filter(
     -------
     src_xy_out, ref_xy_out, residuals_out, gsd_scale_factor, final_gcp_count
     """
+    assert src_xy.shape[-1] == 2, "Expected (N,2) array: (col, row)"
+    assert ref_xy.shape[-1] == 2, "Expected (N,2) array: (col, row)"
     src_xy, ref_xy, residuals, gsd_scale_factor = decluster(
         src_xy, ref_xy, residuals,
         ref_gsd_m=ref_gsd_m,

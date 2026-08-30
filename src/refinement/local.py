@@ -204,9 +204,11 @@ def _ncc_correlation(patch_src: np.ndarray, patch_ref: np.ndarray) -> np.ndarray
 
     corr_full /= norm
 
-    # Crop to valid region and fftshift so peak is at centre
+    # Center zero-lag peak at (h//2, w//2) and crop to match patch_ref shape
+    corr_shifted = np.fft.fftshift(corr_full)
+    cr, cc = fsize[0] // 2, fsize[1] // 2
     h, w = patch_ref.shape
-    corr = np.fft.fftshift(corr_full[:h, :w]).astype(np.float32)
+    corr = corr_shifted[cr - h // 2 : cr + h // 2, cc - w // 2 : cc + w // 2].astype(np.float32)
     return corr
 
 

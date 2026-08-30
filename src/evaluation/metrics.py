@@ -47,18 +47,24 @@ def rmse(predicted_ref_xy: np.ndarray, gt_ref_xy: np.ndarray) -> float:
 
 def pct_lt_1px(predicted_ref_xy: np.ndarray, gt_ref_xy: np.ndarray) -> float:
     """Fraction of GT checkpoints with residual < 1.0 px."""
+    assert predicted_ref_xy.shape == gt_ref_xy.shape, "predicted and GT must have same shape"
+    assert predicted_ref_xy.ndim == 2 and predicted_ref_xy.shape[-1] == 2, "Expected (N,2) array: (col, row)"
     residuals = np.linalg.norm(predicted_ref_xy - gt_ref_xy, axis=1)
     return float(np.mean(residuals < 1.0))
 
 
 def pct_lt_0p5px(predicted_ref_xy: np.ndarray, gt_ref_xy: np.ndarray) -> float:
     """Fraction of GT checkpoints with residual < 0.5 px (sub-pixel precision)."""
+    assert predicted_ref_xy.shape == gt_ref_xy.shape, "predicted and GT must have same shape"
+    assert predicted_ref_xy.ndim == 2 and predicted_ref_xy.shape[-1] == 2, "Expected (N,2) array: (col, row)"
     residuals = np.linalg.norm(predicted_ref_xy - gt_ref_xy, axis=1)
     return float(np.mean(residuals < 0.5))
 
 
 def medae(predicted_ref_xy: np.ndarray, gt_ref_xy: np.ndarray) -> float:
     """Median absolute error in pixels. Robust to outlier GT errors."""
+    assert predicted_ref_xy.shape == gt_ref_xy.shape, "predicted and GT must have same shape"
+    assert predicted_ref_xy.ndim == 2 and predicted_ref_xy.shape[-1] == 2, "Expected (N,2) array: (col, row)"
     residuals = np.linalg.norm(predicted_ref_xy - gt_ref_xy, axis=1)
     return float(np.median(residuals))
 
@@ -188,6 +194,8 @@ def precision_recall_matching_score(
     -------
     (precision, recall, matching_score)
     """
+    assert predicted_ref_xy.ndim == 2 and predicted_ref_xy.shape[-1] == 2, "Expected (N,2) array: (col, row)"
+    assert gt_ref_xy.ndim == 2 and gt_ref_xy.shape[-1] == 2, "Expected (M,2) array: (col, row)"
     n_pred = len(predicted_ref_xy)
     n_gt = len(gt_ref_xy)
 
@@ -231,6 +239,8 @@ def gt_interannotator_rmse(
     -------
     inter-annotator RMSE in pixels
     """
+    assert original_xy.shape == reannotated_xy.shape, "original and reannotated must have same shape"
+    assert original_xy.ndim == 2 and original_xy.shape[-1] == 2, "Expected (N,2) array: (col, row)"
     return rmse(original_xy, reannotated_xy)
 
 
@@ -269,6 +279,9 @@ def compute_all_metrics(
     dict with all metric keys matching EvaluationRecord.metrics schema
     """
     # Filter to eval partition only
+    assert predicted_ref_xy.ndim == 2 and predicted_ref_xy.shape[-1] == 2, "Expected (N,2) array: (col, row)"
+    if match_xy_for_coverage is not None:
+        assert match_xy_for_coverage.ndim == 2 and match_xy_for_coverage.shape[-1] == 2, "Expected (M,2) array: (col, row)"
     eval_pts = [c for c in gt_checkpoints if c.get("partition") == "eval"]
     if not eval_pts:
         logger.warning("No 'eval' partition GT checkpoints found — RMSE not computed")

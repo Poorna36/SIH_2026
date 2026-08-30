@@ -87,6 +87,8 @@ def _compute_t_gsd(src_gsd_m: float, ref_gsd_m: float) -> float:
 
 def _residuals(src_xy: np.ndarray, ref_xy: np.ndarray, H: np.ndarray) -> np.ndarray:
     """Compute per-point reprojection residuals using homography H."""
+    assert src_xy.shape[-1] == 2, "Expected (N,2) array: (col, row)"
+    assert ref_xy.shape[-1] == 2, "Expected (N,2) array: (col, row)"
     n = len(src_xy)
     pts = np.hstack([src_xy, np.ones((n, 1), dtype=np.float64)])  # (N, 3)
     proj = (H @ pts.T).T                                           # (N, 3)
@@ -111,6 +113,8 @@ def _run_degensac(
 
     Returns (H, inlier_mask) where H is 3x3 or None on failure.
     """
+    assert src_xy.shape[-1] == 2, "Expected (N,2) array: (col, row)"
+    assert ref_xy.shape[-1] == 2, "Expected (N,2) array: (col, row)"
     src = src_xy.astype(np.float64)
     ref = ref_xy.astype(np.float64)
 
@@ -140,6 +144,8 @@ def _fit_similarity(
     src_xy: np.ndarray, ref_xy: np.ndarray, threshold: float
 ) -> Tuple[Optional[np.ndarray], np.ndarray]:
     """Estimate similarity (4-DOF: scale, rotation, 2 translations) via RANSAC."""
+    assert src_xy.shape[-1] == 2, "Expected (N,2) array: (col, row)"
+    assert ref_xy.shape[-1] == 2, "Expected (N,2) array: (col, row)"
     if not _HAS_CV2:
         return None, np.zeros(len(src_xy), dtype=bool)
     src = src_xy.astype(np.float32)
@@ -160,6 +166,8 @@ def _fit_affine(
     src_xy: np.ndarray, ref_xy: np.ndarray, threshold: float
 ) -> Tuple[Optional[np.ndarray], np.ndarray]:
     """Estimate affine (6-DOF) via RANSAC."""
+    assert src_xy.shape[-1] == 2, "Expected (N,2) array: (col, row)"
+    assert ref_xy.shape[-1] == 2, "Expected (N,2) array: (col, row)"
     if not _HAS_CV2:
         return None, np.zeros(len(src_xy), dtype=bool)
     src = src_xy.astype(np.float32)
@@ -182,6 +190,8 @@ def _evaluate_model(
     ref_xy: np.ndarray,
 ) -> Tuple[float, float]:
     """Return (inlier_ratio, rmse_px) for a fitted model."""
+    assert src_xy.shape[-1] == 2, "Expected (N,2) array: (col, row)"
+    assert ref_xy.shape[-1] == 2, "Expected (N,2) array: (col, row)"
     n = len(src_xy)
     inlier_count = int(inlier_mask.sum())
     inlier_ratio = inlier_count / n if n > 0 else 0.0

@@ -275,6 +275,7 @@ def selection_stats(
     def _stats(pts: np.ndarray) -> Tuple[float, float]:
         if len(pts) == 0:
             return 0.0, 0.0
+        assert pts.shape[-1] == 2, "Expected (N,2) array: (col, row)"
         if image_shape is not None:
             H, W = float(image_shape[0]), float(image_shape[1])
         else:

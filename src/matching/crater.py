@@ -241,6 +241,8 @@ class CraterMatcher(BaseMatcher):
         if len(src_xy) < 3:
             return src_xy, ref_xy, confidence
 
+        assert src_xy.shape[-1] == 2, "Expected (N,2) array: (col, row)"
+        assert ref_xy.shape[-1] == 2, "Expected (N,2) array: (col, row)"
         displacements = ref_xy - src_xy  # (N, 2)
         med = np.median(displacements, axis=0)
         diffs = np.linalg.norm(displacements - med, axis=1)

@@ -52,6 +52,8 @@ class TileModel:
 
 
 def _residuals_H(src_xy: np.ndarray, ref_xy: np.ndarray, H: np.ndarray) -> np.ndarray:
+    assert src_xy.shape[-1] == 2, "Expected (N,2) array: (col, row)"
+    assert ref_xy.shape[-1] == 2, "Expected (N,2) array: (col, row)"
     n = len(src_xy)
     pts = np.hstack([src_xy, np.ones((n, 1), dtype=np.float64)])
     proj = (H @ pts.T).T
@@ -67,6 +69,8 @@ def _fit_tile_model(
     center: Tuple[float, float],
 ) -> Optional[TileModel]:
     """Fit affine, fallback to homography, for one tile's inlier set."""
+    assert src_xy.shape[-1] == 2, "Expected (N,2) array: (col, row)"
+    assert ref_xy.shape[-1] == 2, "Expected (N,2) array: (col, row)"
     if not _HAS_CV2 or len(src_xy) < MIN_INLIERS_PER_TILE:
         return None
 

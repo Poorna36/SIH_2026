@@ -44,6 +44,9 @@ def anms_ssc(
     if N == 0 or num_points >= N:
         return list(keypoints)
 
+    if isinstance(keypoints, np.ndarray):
+        assert keypoints.shape[-1] >= 2, "Expected (N, 2+) array: (col, row, ...)"
+
     h, w = image_shape
 
     # ── Unpack to (x, y, response) ─────────────────────────────────────────
@@ -144,6 +147,7 @@ def keypoints_to_array(keypoints) -> np.ndarray:
     No-op if already an ndarray.
     """
     if isinstance(keypoints, np.ndarray):
+        assert keypoints.shape[-1] >= 2, "Expected (N, 2+) array: (col, row, ...)"
         return keypoints
     return np.array([(kp.pt[0], kp.pt[1], kp.response) for kp in keypoints],
                     dtype=np.float32)

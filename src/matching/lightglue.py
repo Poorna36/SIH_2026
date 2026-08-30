@@ -116,6 +116,9 @@ class LightGlueMatcher(BaseMatcher):
         if n_total == 0:
             return src_xy, ref_xy, confidence, 0
 
+        assert src_xy.shape[-1] == 2, "Expected (N,2) array: (col, row)"
+        assert ref_xy.shape[-1] == 2, "Expected (N,2) array: (col, row)"
+
         # ── In-bounds check ─────────────────────────────────────────────────
         # coords are (col, row) = (x, y)
         in_src = (
