@@ -51,6 +51,8 @@ pair:
   geo_cell_deg: 10                           # 10x10 degree cells for train/test split
   wac_reference: data/reference/wac_643nm.tif
   ode_timeout_s: 30                          # fallback to WAC if ODE times out
+  selene_wmts_url: "https://trek.nasa.gov/moon/"  # Moon Trek WMTS; Kaguya TC 10m/MI 62m
+  reference_fallback_chain: [nac_ode, wac_crop, selene_wmts]  # order is authoritative
   strata:                                    # bins for reporting (never collapsed)
     lat_bins:
       equatorial:   [-45, 45]
@@ -61,10 +63,10 @@ pair:
       lt60:  [30, 60]
       lt120: [60, 120]
       gt120: [120, 180]
-    crater_density_bins:
-      low:    [0, 2]
-      medium: [2, 5]
-      high:   [5, 100]
+    crater_density_bins:                     # UNIT: craters/km2 -- enforced in all code and docs
+      low:    [0, 2]                         # craters/km2
+      medium: [2, 5]                         # craters/km2
+      high:   [5, 100]                       # craters/km2
 ```
 
 ---
@@ -134,18 +136,34 @@ matchers:
       max_iter: 10000
       confidence: 0.99999
 
-  # M1: RIFT2 + scale extension
+  # M1a: RIFT2 + scale extension
   rift2:
     num_scales: 4                            # Ns in log-Gabor bank
     num_orientations: 6                      # No in log-Gabor bank; multi-MIM cost = No x descriptor
     scale_space_octaves: 4                   # our extension -- multi-octave for scale invariance
     pc_threshold: 0.1                        # phase congruency keypoint threshold (TUNE)
     mim_size: 96                             # descriptor spatial support J
+    scale_consistency_filter:               # REQUIRED -- implements the D08 scale-space novelty
+      enabled: true
+      max_log_scale_deviation: 0.3          # reject if |log(scale_src/scale_ref) - log(gsd_ratio)| > this
     anms:
       enabled: true
       budget: 1500
       method: ssc
-    note: "15-30x slower than SURF -- benchmark per-pair; one documented total failure"
+    polar_validated: false                   # RIFT2 demonstrated failing on OHRC-NAC Polar (Traditional_vs_DL)
+    note: "15-30x slower than SURF; NOT validated at poles; one documented total failure"
+
+  # M1b: LNIFT (pilot-phase benchmark alongside RIFT2; promotable to primary M1 if it wins)
+  lnift:
+    role: m1b_pilot                          # benchmarked against rift2 on same pilot pairs
+    anms:
+      enabled: true
+      budget: 1500
+      method: ssc
+    scale_consistency_filter:
+      enabled: true
+      max_log_scale_deviation: 0.3
+    note: "~100x faster than RIFT per supplementary_research.md; 99.9% vs 79.85% SR reported"
 
   # M2: SuperPoint + LightGlue
   lightglue:
@@ -154,25 +172,33 @@ matchers:
     match_threshold: 0.0                     # let LightGlue confidence filter handle this
     depth_confidence: 0.95                   # early stopping
     width_confidence: 0.99                   # early stopping
-    requires_gpu: true                       # preferred; cpu_fallback=true falls to CPU
-    cpu_fallback: true
+    requires_gpu: true                       # preferred; cpu_fallback=true activates automatically
+    cpu_fallback: true                       # M2 eligible on CPU; GPU affects runtime only, NOT eligibility
     f2_checks: mandatory                     # in-domain bounds + one-to-one -- NEVER disable
 
   # M3: Crater-geometry (CNSFM-style)
   crater:
-    detector: yolov9                         # pretrained, fine-tuned via transfer learning
+    detector: yolov9                         # pretrained, transfer-learned from LROC NAC @ 0.5 m/px
     min_crater_diameter_px: 8               # below this, skip crater as too small
-    crater_density_gate: 3.0               # tau_c: both images must exceed this value (TUNE)
+    crater_density_gate: 3.0               # tau_c in craters/km2; BOTH images must exceed (TUNE)
+    crater_density_unit: craters_per_km2    # ENFORCED -- never use unitless value
     mcr_outlier_method: mcr_structural
     topology_similarity_threshold: 0.65     # (TUNE)
     gate_terrain_classes: [highland, polar_highland, polar]
+    cpu_fallback: hough_circles              # activated when GPU unavailable; recorded as 'crater_hough'
+    preflight_recall_check: mandatory        # run per-sensor before M3 used as primary
+      # YOLOv9 validated ONLY at 0.5 m/px NAC; OHRC (0.3m) and TMC (5m) are UNVALIDATED_PRIMARY
+      # until recall check passes on a manually-verified crater patch for that sensor
     note: "explicitly fails in crater-sparse mare -- gating is mandatory, not optional"
 
 arbitration:
   always_run: [sift]                         # M0 always runs as floor + fallback
   inlier_ratio_floor: 0.05                   # below = primary matcher failed, use fallback
   fallback_to: sift                          # M0 is the fallback
-  preference_order: [crater, lightglue, rift2, sift]
+  preference_order: [crater, lightglue, lnift, rift2, sift]
+  # NOTE: M2 (lightglue) eligibility is NOT gated on gpu_available -- cpu_fallback handles it
+  # NOTE: M1 (rift2/lnift) is NOT the polar fallback -- flag no_validated_primary_matcher for
+  #       CPU-only + low-crater-density + polar combinations
 ```
 
 ---
@@ -243,7 +269,11 @@ verification:
     min_inliers_per_tile: 12
 
   gcp_declustering:
-    min_spacing_px: 20
+    min_spacing_px: 20                       # base spacing in pixels at reference GSD
+    gsd_scale: true                          # REQUIRED: scale min_spacing_px by (ref_gsd_m / base_gsd_m)
+    # base_gsd_m: 0.5 (NAC reference baseline)
+    # Effect: OHRC (0.31m ref) -> ~13px; TMC (5m ref) -> ~200px; IIRS (80m ref) -> ~3200px
+    # Without GSD scaling, physical spacing varies wildly across sensor pairs -- a real behavior change
     method: grid_nearest_center
     zscore_threshold: 3.0
     min_gcps_for_zscore: 20
@@ -271,7 +301,17 @@ refinement:
   tukey_alpha: 0.5
   pyramid_levels: 3                          # Gaussian pyramid coarse-to-fine
   peak_fit: paraboloid                       # 2D paraboloid sub-pixel peak fitting
-  sharpness_threshold: 0.15                  # P[0,0]/sum(3x3) < tau_q -> reject; (TUNE)
+  sharpness_threshold: 0.15                  # P[0,0]/sum(3x3) < tau_q -> reject
+    # *** PRIORITY TUNE *** v1.1 had 0.45 (3x stricter); v2.0 set 0.15
+    # This difference materially changes how often refinement reports success
+    # and directly affects refinement_gain metrics -- validate on pilot pairs before any
+    # leaderboard number is trusted. Start with 0.15; tune toward 0.45 if false-refinements seen.
+  second_peak_rejection:                     # multimodal correlation safety check (RESTORED from v1.1)
+    enabled: true
+    flat_window_variance_min: 10.0           # reject if window variance < tau_v (featureless)
+    second_peak_ratio_max: 0.80              # reject if second peak > 0.80 * primary peak
+    # Rationale: repetitive crater-field texture causes false correlation peaks in lunar imagery;
+    # nothing else in the pipeline covers this failure mode.
   min_refined_fraction: 0.70                 # gate; below = flag pair as partial_refinement
   report_before_after_rmse: true             # mandatory
 ```

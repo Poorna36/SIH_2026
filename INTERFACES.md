@@ -34,7 +34,7 @@ Data contracts between all pipeline stages. Every artifact must conform to these
   "delta_azimuth_deg": 5.2,
   "latitude_center_deg": -85.2,
   "terrain_class":   "polar_highland",
-  "crater_density":  4.7,
+  "crater_density_per_km2": 4.7,
   "geo_cell":        "-90_0",
   "split":           "test",
   "gt_path":         "data/metadata/gt/ohr_20200827T003010__nac_M123456789_gt.json",
@@ -44,7 +44,9 @@ Data contracts between all pipeline stages. Every artifact must conform to these
 
 Required fields: pair_id, src.product_id, src.cub_path, src.gsd_m, src.solar_incidence_deg, src.solar_azimuth_deg, src.sensor, src.utc, ref.path, ref.type, overlap_fraction, terrain_class, geo_cell, split.
 
-Optional but expected: crater_density, delta_azimuth_deg, latitude_center_deg, gt_path.
+ref.type allowed values: `NAC` | `WAC` | `SELENE` — SELENE pairs form a separate evaluation stratum and are never merged with NAC/WAC rows in leaderboard aggregation.
+
+Optional but expected: crater_density_per_km2 (UNIT: craters/km²; a unitless value is a configuration error), delta_azimuth_deg, latitude_center_deg, gt_path.
 
 ---
 
@@ -63,8 +65,11 @@ Optional but expected: crater_density, delta_azimuth_deg, latitude_center_deg, g
       "confidence":   0.97,
       "scale":        1.02,
       "angle_deg":    3.1,
+      "gate_skip":    false,
+      "detector_validated": true,
       "refined_delta": [dx, dy],
       "refine_sharpness": 0.84,
+      "second_peak_ratio": 0.31,
       "refine_success":   true,
       "is_inlier":    true,
       "tile_id":      "3_5"
@@ -90,7 +95,9 @@ Notes:
 - src_xy and ref_xy are always (col, row) floats
 - matches_raw.json has stage=raw; is_inlier absent; refined_delta absent
 - matches_selected.json has stage=selected; is_inlier absent; refined_delta absent
-- matches_refined.json has all fields
+- matches_refined.json has all fields including second_peak_ratio
+- gate_skip: true means M3 density/terrain gate failed; no match data present for this matcher on this pair
+- detector_validated: false means M3 YOLOv9 pre-flight recall check has not yet passed for this sensor; treat result as UNVALIDATED_PRIMARY
 - Do not include training data in test results. Check split before aggregating.
 
 ---
@@ -116,9 +123,15 @@ Notes:
   "ransac_conf": 0.99999,
   "desca_applied": false,
   "model_residuals": [0.31, 0.52, ...],
+  "gsd_scale_factor": 1.0,
   "latitude_center_deg": -85.2,
   "created_at": "2026-08-27T12:06:00Z"
 }
+
+CLARIFICATION — t_gsd_used vs stop_on_rmse_below:
+- t_gsd_used is the DEGENSAC reprojection threshold (in pixels) used during geometric estimation.
+- Model-ladder acceptance uses the separate fixed constant stop_on_rmse_below (default 1.0 px from CONFIGURATION.md).
+- These are two different thresholds with different roles. Do NOT conflate them.
 ```
 
 For tilewise=true, model_matrix is replaced by "tile_models": [{tile_id, model_type, model_matrix, inlier_count, rmse_px}].

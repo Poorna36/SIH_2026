@@ -115,16 +115,23 @@ python scripts/build_pairs.py --products data/metadata/products.jsonl \
 
 Steps:
 - Padded bbox: k x sigma_pointing (k from config, sigma approx 500-2000 m)
-- Reference query via Lunar ODE bbox search (NAC) or GDAL crop (WAC)
+- Reference query chain (in order):
+  1. NAC via Lunar ODE bbox search
+  2. WAC 643nm GDAL crop (local mosaic)
+  3. SELENE Kaguya TC/MI via Moon Trek WMTS bbox query (optional; see note)
 - Compute overlap_fraction between source footprint and reference
-- Assign terrain_class, crater_density, Δ-azimuth bin, latitude bin
+- Record which reference type was used (ref.type: NAC | WAC | SELENE) in PairRecord
+- Assign terrain_class, crater_density_per_km2, Δ-azimuth bin, latitude bin
 - Assign geo_cell (10x10 degree cells) and split (train/test, disjoint cells)
 - Append PairRecord to manifest.jsonl
+
+SELENE note: Moon Trek WMTS serves Kaguya TC (10 m/px) and MI (62 m/px) by bbox query at no extra infrastructure cost. SELENE is a third reference type explicitly named in the SIH problem statement. Use it only when NAC and WAC both fail to cover the footprint. Mark pairs with ref.type=SELENE in INTERFACES.md PairRecord; they form a separate stratum in evaluation.
 
 Success gate: overlap_fraction >= 0.5 (below that, keep pair, flag partial_overlap=true).
 
 On failure:
-- ODE returns no NAC strip -> try WAC crop fallback
+- ODE returns no NAC strip -> try WAC crop
+- WAC crop fails -> try SELENE Moon Trek WMTS query
 - Still no reference -> skip pair, write to skipped.jsonl with reason
 
 ### S3 — Preprocessing (L1)
@@ -152,21 +159,40 @@ Special case: if masked fraction > 30% (extreme polar scene), keep pair (it is a
 ```bash
 python scripts/benchmark.py --pair <pair_id> --matcher sift
 python scripts/benchmark.py --manifest data/pairs/manifest.jsonl \
-  --matchers sift,rift2,lightglue,crater --splits test --parallel 4
+  --matchers sift,rift2,lnift,lightglue,crater --splits test --parallel 4
 ```
 
 Registry loop (configs/matchers.yaml). M0 always runs regardless of arbitration.
 
 Pre-match gates:
-- M3 (crater): crater_density >= tau_c in BOTH images, else skip
-- M2 (lightglue): GPU required unless cpu_fallback flag set
-- M1 (rift2): tile-restricted to control runtime
+- M3 (crater): crater_density_per_km2 >= tau_c in BOTH images AND terrain_class in {highland, polar_highland, polar}, else gate_skip=true. ALSO: GPU availability check — if no GPU, activate cpu_fallback: hough_circles.
+- M3 pre-flight recall check: before M3 is used as primary on a new sensor (OHRC or TMC), run recall check on a small manually verified crater set for that sensor. YOLOv9 is only validated at 0.5 m/px NAC resolution; treat M3 as UNVALIDATED_PRIMARY until this check passes and record `detector_validated: false` in matches_raw.json.
+- M2 (lightglue): M2 is eligible on CPU and GPU (cpu_fallback: true is active). GPU availability determines expected runtime only — it does NOT gate matcher eligibility. Do not skip M2 because of absent GPU.
+- M1 (rift2 / lnift): tile-restricted to control runtime. M1 is NOT the designated illumination-robust default for polar pairs — Traditional_vs_DeepLearning demonstrates RIFT2 fails (❌) on OHRC-NAC Polar (same sensor, same condition). For CPU-only + low-crater-density + polar combinations, flag the pair as `no_validated_primary_matcher=true` in the result JSON; do not silently report an M1 result as trustworthy at poles.
 
 ANMS (SSC variant) is applied inside M0/M1 after detection, before description:
   detect -> ANMS(budget=config.anms.budget) -> describe -> match
 
+RIFT2 / LNIFT scale-consistency filter (applied before ANMS, inside rift.py):
+  reject keypoint match if |log(scale_src / scale_ref) - log(gsd_ratio)| > 0.3
+  where gsd_ratio = src.gsd_m / ref.gsd_m from the PairRecord.
+  Rationale: this is the mechanism behind the D08 multi-octave scale-space novelty claim;
+  without it the extension has no implementation.
+
+Arbitration logic (corrected):
+  if crater_density_per_km2 >= tau_c and terrain_class in {highland, polar_highland, polar}
+      and detector_validated:
+      primary = M3  # crater-geometry
+  elif learned_confidence_ok:   # note: NOT gated on gpu_available
+      primary = M2  # LightGlue (CPU or GPU)
+  else:
+      primary = M1  # RIFT2 or LNIFT (CPU-only fallback; flag if polar)
+  # M0 always runs in parallel as baseline and fallback
+  if primary.inlier_ratio < inlier_ratio_floor:
+      fallback to M0; record in arbitration.log
+
 Output per matcher: results/<pair_id>/<matcher>/matches_raw.json
-  = list of {src_xy, ref_xy, confidence, scale, angle} + runtime + matcher params hash
+  = list of {src_xy, ref_xy, confidence, scale, angle, gate_skip, detector_validated} + runtime + matcher params hash
 
 Success gate: >= 150 candidate matches. On failure: record empty result in failures.jsonl; arbitration moves to next matcher.
 
@@ -322,12 +348,28 @@ Leakage audit MUST pass before any leaderboard number is quoted.
 
 ## 5. Orchestration Rules
 
-1. **Checkpointing:** each stage writes its artifact before the next starts; a stage re-runs only if its output is missing or --force is set
-2. **Resume:** benchmark.py treats a (pair, matcher) as done iff matches_refined.json + geometry.json exist; S8/S9 always re-aggregate
-3. **Parallelism:** pairs are independent -- process-pool over pairs; GPU jobs (M2) serialized through a lock
-4. **Provenance:** every artifact JSON carries {config_hash, code_commit, matcher_params_hash, timestamps}; manifest.jsonl and products.jsonl are append-only
-5. **Determinism:** seeds fixed for RANSAC and selection; seed reported in results for reproducibility
-6. **Never silently drop:** every gate failure is recorded in results/failures.jsonl with stage, reason, and fallback taken
+1. **Checkpointing:** each stage writes its artifact before the next starts; a stage re-runs only if its output is missing or --force is set.
+2. **Resume — full state machine:**
+
+| Pair state | Deepest artifact present | Resume action |
+|---|---|---|
+| EMPTY | nothing | run S1–S9 |
+| INGESTED | products.jsonl entry | run S2–S9 |
+| PAIRED | manifest.jsonl entry + ref crop | run S3–S9 |
+| PREPROCESSED | data/processed/<pair_id>/ | run S4–S9 |
+| MATCHED | matches_raw.json | run S5–S9 |
+| SELECTED | matches_selected.json | run S6–S9 |
+| VERIFIED | geometry.json | run S7–S9 |
+| REFINED | matches_refined.json | run S8–S9 |
+| REGISTERED | registered.tif + match_points.csv | run S9 only |
+| EVALUATED | pair_results JSON | nothing; re-aggregate only |
+
+A (pair, matcher) is marked DONE only when **all** of {matches_refined.json, geometry.json, registered.tif, pair_results JSON} exist. A missing intermediate (e.g. only matches_selected.json present) resumes from that intermediate — it does not restart from scratch.
+
+3. **Parallelism:** pairs are independent — process-pool over pairs; GPU jobs (M2, M3-yolov9) serialized through a GPU lock file.
+4. **Provenance:** every artifact JSON carries {config_hash, code_commit, matcher_params_hash, timestamps}; manifest.jsonl and products.jsonl are append-only.
+5. **Determinism:** seeds fixed for RANSAC and selection; seed reported in results for reproducibility.
+6. **Never silently drop:** every gate failure is recorded in results/failures.jsonl with stage, reason, and fallback taken.
 
 ---
 
@@ -356,10 +398,28 @@ python -m src.evaluation.aggregate --results results/ --gt data/metadata/gt/
 2. [ ] CK kernel fetched for strip date 2020-08-27 window
 3. [ ] Downloaded from PRADAN/CHMAP: two verified OHRC strips + TMC-2 ortho/DEM (ASP §8.15 set) -- filenames untouched
 4. [ ] S1 ingest -> 3 products in products.jsonl with footprints and solar angles
-5. [ ] S2 build_pairs -> at least 3 manifest entries; NAC reference crops fetched via ODE; WAC crop fetched locally
+5. [ ] S2 build_pairs -> at least 3 manifest entries; NAC reference crops fetched via ODE; WAC crop fetched locally; SELENE Moon Trek WMTS reachable (connectivity check only at pilot stage)
 6. [ ] S3 preprocess -> masks 5-30%; meta.json provenance written
 7. [ ] S4-S7 for M0 (SIFT) on each pilot pair -> geometry.json + matches_refined.json exist
 8. [ ] S8 -> registered.tif opens in QGIS; checkerboard QC looks aligned by eye
 9. [ ] S9 -> leaderboard.csv row for M0; leakage audit passes
 10. [ ] failures.jsonl reviewed -- every gate failure accounted for
-11. [ ] Only then: repeat S4-S9 for rift2, lightglue (and crater if density gate passes)
+11. [ ] RIFT2 scale-consistency filter confirmed active: reject count > 0 on a GSD-mismatched pair
+12. [ ] M2 (LightGlue) runs on CPU-only machine and produces matches (cpu_fallback validation)
+13. [ ] M3 pre-flight recall check run on OHRC crater patch; detector_validated flag confirmed in matches_raw.json
+14. [ ] LNIFT (M1b) pilot run completed on same 3 pairs as RIFT2 for comparative benchmarking
+15. [ ] Only then: repeat S4-S9 for rift2, lnift, lightglue (and crater if density gate passes)
+
+---
+
+## 8. Exit Codes
+
+All scripts (`ingest.py`, `build_pairs.py`, `preprocess.py`, `benchmark.py`, `register.py`) return the following exit codes for CI/orchestration:
+
+| Code | Meaning |
+|---|---|
+| 0 | All pairs completed successfully; all gates passed |
+| 1 | One or more pairs failed at a gate; failures logged to failures.jsonl; non-failed pairs completed |
+| 2 | Configuration error (missing config key, version mismatch, ISISDATA not set) |
+| 3 | Environment error (ASP version < 3.7.0, SPICE kernel fetch failed, GPU OOM unrecoverable) |
+| 4 | Leakage audit failed; no leaderboard output written |

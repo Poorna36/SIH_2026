@@ -119,6 +119,9 @@ The implemented system passes validation if, on the test split:
 | IIRS RMSE (absolute) | < 80 m | < 40 m |
 | Leakage audit | must pass | must pass |
 | Polar stratum included in report | mandatory | mandatory |
+| TMC-2–WAC (separate, non-gating) | reported separately; shortfall does NOT fail overall system | RMSE < 1.5 px |
+
+Note on TMC-2–WAC row: this sensor pair is confirmed unvalidated by any paper in the corpus (ARCHITECTURE.md §8 item 6). A shortfall here reflects the experimental status of the branch, not a system failure. It must still be reported — never hidden.
 
 ---
 
@@ -140,25 +143,28 @@ The leakage audit must pass before any leaderboard number is published or quoted
 
 ## 7. Regression Suite
 
-For catching regressions during implementation:
+For catching regressions during implementation. Every test has an ID for CI reference.
 
 ### Unit Tests
-- L0: isisimport + spiceinit on a known-good OHRC product
-- L0: bbox padding formula (verify math against reference SIFT-IIRS-WAC paper setup)
-- L1: shadow mask fraction on one representative pair (expected: 5-30%)
-- L1: radiometric normalization (mean/std of normalized src should match ref's after transfer)
-- L1: ANMS SSC output has no two points within radius r
-- L2: M0 (SIFT) produces >= 50 candidates on a known-good textured pair
-- L2: M2 (LightGlue) F2 checks reject out-of-bounds and duplicate matches
-- L3: coverage after grid selection is >= coverage_min
-- L4: DEGENSAC on a known-good set produces inlier_ratio >= 0.5
-- L4: Model ladder selects homography over affine when residuals require it
-- L5: refinement gain is positive on a synthetic controlled shift test
-- L7: RMSE computation reads only "eval" partition points
+
+| ID | Stage | Assertion | Pass Condition |
+|---|---|---|---|
+| T01 | L0 | isisimport + spiceinit on a known-good OHRC product | spiceinit exits 0; footprint non-empty; solar angles present |
+| T02 | L0 | bbox padding formula | Padded bbox area = (footprint + k×σ)²; verified against reference SIFT-IIRS-WAC paper setup; error < 0.1% |
+| T03 | L1 | Shadow mask fraction on one representative pair | Fraction in [5%, 30%] |
+| T04 | L1 | Radiometric normalisation | Mean and std of normalised src within 5% of ref after stat transfer |
+| T05 | L1/L2 | ANMS SSC output | No two selected keypoints within suppression radius r; budget within ±5% of target |
+| T06 | L2 | M0 (SIFT) candidate count on a known-good textured pair | >= 50 candidates before selection |
+| T07 | L2 | M2 (LightGlue) F2 checks | Out-of-bounds and duplicate matches removed; count of removed > 0 on a crafted test set |
+| T08 | L3 | Grid selection coverage | coverage after selection >= coverage_min (0.60) |
+| T09 | L4 | DEGENSAC on a known-good match set | inlier_ratio >= 0.5; H recovered to within 0.1 px on a synthetic homography test |
+| T10 | L4 | Model ladder selects homography over affine | Homography chosen when affine RMSE > 1.0 px; warp residual at corners < 0.05 px on synthetic test |
+| T11 | L5 | Refinement gain on a synthetic controlled shift | Take one real image; apply known shift of (3.7, 2.3) px; run L5; recovered shift within 0.1 px of ground truth; sharpness > tau_q |
+| T12 | L7 | RMSE computation reads only "eval" partition | Inserting a "fit" partition point does not change reported RMSE |
 
 ### Integration Tests
-- Full pipeline on 3 pilot pairs, all matchers, verifies no crashes and all artifacts written
-- benchmark.py --resume: re-running does not re-process completed stages
+- Full pipeline on 3 pilot pairs, all matchers: no crashes and all artifacts written
+- benchmark.py --resume: re-running does not re-process completed stages; state machine resumes from correct intermediate
 
 ### Synthetic Ground Truth Test
 - Take one real image; apply known transform T (rotation=2 deg, scale=1.05, shift=50px each axis)

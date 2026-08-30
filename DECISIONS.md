@@ -97,13 +97,13 @@ Architecture decision record (ADR). Every major design choice with evidence basi
 
 ---
 
-## D08 — RIFT with scale-space extension (M1), not off-the-shelf RIFT
+## D08 — RIFT with scale-space extension (M1a), not off-the-shelf RIFT
 
-**Decision:** M1 is RIFT2 (faster version) plus a multi-octave log-Gabor scale-space extension we add.
+**Decision:** M1a is RIFT2 (faster version) plus a multi-octave log-Gabor scale-space extension we add.
 
 **Evidence:** RIFT_extracted.md: RIFT achieves 100% SR on 6 NRD datasets vs ~30% for SIFT. BUT RIFT has no scale invariance — it requires images pre-resampled to matching GSD. Our sensors differ by up to ~17x GSD (OHRC:TMC-2). This is a direct conflict. The scale-space extension (add multi-octave log-Gabor search on top of PC/MIM) is identified in the paper itself as the natural extension to close this gap.
 
-**Why M1 is not the default:** RIFT is 15-30x slower than SURF; it failed completely on one dataset in the KAZE(2026) benchmark. LightGlue (M2) is preferred where GPU is available. M1 is the CPU-only, illumination-robust fallback.
+**Why M1 is not the polar default (updated):** Traditional_vs_DeepLearning_FeatureMatching.md demonstrates RIFT2 failing (❌) on OHRC-NAC Polar — the exact sensor pair and the exact hardest named condition in this project. This is stronger and more directly relevant negative evidence than the previously cited KAZE(2026) benchmark failure on a different dataset. M1 is NOT designated the illumination-robust polar fallback; it is the CPU-only fallback of last resort. For CPU-only + low-crater-density + polar combinations, the pair is flagged `no_validated_primary_matcher=true` rather than silently reporting an M1 result as trustworthy.
 
 **Alternatives rejected:**
 - Off-the-shelf RIFT without scale extension: rejected — fails on OHRC:TMC-2 GSD mismatch unless GSD is already reconciled in L1 (which L1 does via pyramid, so RIFT may work after that — benchmark will verify).
@@ -160,3 +160,18 @@ Architecture decision record (ADR). Every major design choice with evidence basi
 **Evidence:** CNSFM_Crater_Neighborhood_Matching.md: the crater-neighborhood method requires sufficient crater density to construct a valid CNSF graph. It explicitly fails (returns zero matches) in crater-sparse regions (mare, melt sheets). NASA_SubPixel_Refinement.md P4: purely landmark-based approaches are insufficient for coverage in low-crater-density terrain.
 
 **Why the gate is on BOTH images:** A mismatch in crater density between source and reference produces an underdetermined graph matching problem.
+
+---
+
+## D14 — LNIFT added as M1b for pilot-phase benchmarking
+
+**Decision:** LNIFT is added as M1b in the matcher registry, benchmarked alongside RIFT2 (M1a) on the same pilot pairs. If LNIFT wins on pilot metrics, it is promoted to primary M1.
+
+**Evidence:** supplementary_research.md reports LNIFT as the strongest practical candidate for M1's exact role: ~100x faster than RIFT, 99.9% SR vs 79.85% SR for RIFT2. This was never evaluated or rejected anywhere in the existing architecture documents.
+
+**Why not immediately primary:** The research-evidence rule requires verifying a reported method on our data before promoting it. LNIFT's SR figure comes from a different dataset; it must be validated on the same pilot pairs as RIFT2 before a role decision is made.
+
+**Alternatives rejected:**
+- Skipping LNIFT entirely: rejected — the evidence base explicitly identifies it as the strongest M1 candidate; ignoring it without evaluation violates the research-evidence rule.
+
+**Trade-off:** Adds one matcher to the pilot benchmark (low cost); potential payoff is a 100x runtime improvement for M1 with higher SR.

@@ -24,11 +24,12 @@ Format: ID | Name | Component | Description / Acceptance Criteria / Notes
 ## F02 — Automated Reference Patch Acquisition
 
 **Component:** L0 / scripts/build_pairs.py
-**Description:** Given a source product footprint, automatically acquire the corresponding reference image patch without manual work. For NAC: query Lunar ODE bbox endpoint. For WAC: crop local WAC 643nm mosaic via GDAL. Apply 2-5x pointing-uncertainty padding to the footprint bbox before querying.
+**Description:** Given a source product footprint, automatically acquire the corresponding reference image patch without manual work. For NAC: query Lunar ODE bbox endpoint. For WAC: crop local WAC 643nm mosaic via GDAL. For SELENE: query Moon Trek WMTS by bbox (Kaguya TC 10 m/px or MI 62 m/px). Apply 2-5x pointing-uncertainty padding to the footprint bbox before querying.
 **Acceptance criteria:**
 - Reference patch exists for >= 90% of valid source products
 - Bounding box padding is recorded in PairRecord
-- Fallback chain is implemented: NAC via ODE -> WAC crop -> skip with reason
+- Fallback chain is implemented in order: NAC via ODE -> WAC crop -> SELENE Moon Trek WMTS -> skip with reason
+- ref.type recorded as NAC | WAC | SELENE in PairRecord; SELENE pairs form a separate evaluation stratum
 
 ---
 
@@ -111,17 +112,32 @@ Format: ID | Name | Component | Description / Acceptance Criteria / Notes
 
 ---
 
-## F10 — Matcher M1: RIFT2 + Scale-Space Extension
+## F10 — Matcher M1a: RIFT2 + Scale-Space Extension
 
 **Component:** L2 / src/matching/rift.py
 **Description:** Phase congruency detection (log-Gabor, Ns=4, No=6) + Maximum Index Map descriptor + multi-MIM rotation invariance + multi-octave log-Gabor scale-space extension (our addition to close RIFT's scale gap). ANMS SSC applied pre-description.
+**Scale-consistency filter (MANDATORY — implements D08 novelty):** After keypoint matching, reject any match where |log(scale_src / scale_ref) − log(gsd_ratio)| > 0.3, where gsd_ratio = src.gsd_m / ref.gsd_m from the PairRecord. Without this filter, the multi-octave scale-space extension has no implementation.
+**Polar limitation (DOCUMENTED):** RIFT2 is demonstrated failing (❌) on OHRC-NAC Polar in Traditional_vs_DeepLearning_FeatureMatching — the same sensor pair and exact hardest condition in this project. M1 is NOT the validated polar fallback. For CPU-only + low-crater-density + polar pairs, record `no_validated_primary_matcher=true`.
 **Acceptance criteria:**
 - Rotation invariance: 100% SR on a 72-pair synthetic 5-degree rotation sweep
 - Scale invariance: operates correctly on pairs with GSD ratio up to 5x after L1 pyramid reconciliation
+- Scale-consistency filter active: reject count > 0 on a GSD-mismatched pair (verifiable in pilot)
 - Matches_raw.json includes per-match confidence (NCC score)
 - Runtime recorded; flag if > 120 s per tile
+- `polar_validated: false` recorded in matches_raw.json metadata
 
 **Implementation note:** PC detection needs parameter tuning on lunar data (tau_pc). Multi-MIM costs No× compute at match time. The scale-space extension adds octaves above RIFT's original fixed scale.
+
+---
+
+## F10b — Matcher M1b: LNIFT (Pilot-Phase Benchmark)
+
+**Component:** L2 / src/matching/lnift.py
+**Description:** LNIFT is benchmarked alongside RIFT2 (M1a) on the same pilot pairs. If LNIFT wins on pilot metrics, it is promoted to primary M1. Reported by supplementary_research.md as ~100x faster than RIFT with 99.9% SR vs 79.85% for RIFT2. Implements the same scale-consistency filter as M1a.
+**Acceptance criteria:**
+- Runs on same 3 pilot pairs as RIFT2; results compared in leaderboard
+- Same scale-consistency filter as F10 applied
+- Winner declared per pilot evaluation; DECISIONS.md D14 updated with outcome
 
 ---
 
@@ -140,12 +156,16 @@ Format: ID | Name | Component | Description / Acceptance Criteria / Notes
 ## F12 — Matcher M3: Crater-Geometry (CNSFM-style)
 
 **Component:** L2 / src/matching/crater.py
-**Description:** YOLOv9 crater detector (pretrained, transfer-learned) -> Crater Neighborhood Structure Feature (CNSF) graph construction -> similarity-invariant topology matching -> MCR structural outlier removal. GATED: runs only when crater_density >= tau_c in BOTH images AND terrain_class in {highland, polar_highland, polar}.
+**Description:** YOLOv9 crater detector (pretrained, transfer-learned from LROC NAC @ 0.5 m/px) -> Crater Neighborhood Structure Feature (CNSF) graph construction -> similarity-invariant topology matching -> MCR structural outlier removal. GATED: runs only when crater_density_per_km2 >= tau_c in BOTH images AND terrain_class in {highland, polar_highland, polar}.
+**CPU fallback:** When GPU unavailable, activate HoughCircles-based crater detection instead of YOLOv9. Record matcher_id as `crater_hough` (not `crater`) in all results.
+**Pre-flight recall check (MANDATORY before M3 as primary):** YOLOv9 is validated only at 0.5 m/px (NAC). OHRC (0.3 m/px) and TMC (5 m/px) are untested in all reviewed papers. Before M3 is trusted as primary on a new sensor, run recall on a small manually-verified crater patch for that sensor. Record `detector_validated: true/false` in matches_raw.json.
 **Acceptance criteria:**
 - Gate evaluation always runs first; skip decision recorded in matches_raw.json (gate_skip=true, reason)
-- No false activations in mare (crater_density < tau_c) pairs
+- crater_density field in PairRecord has unit craters/km2 — unitless value is a configuration error
+- No false activations in mare (crater_density_per_km2 < tau_c) pairs
 - When triggered, produces crater-based correspondences with topology confidence scores
-- YOLOv9 transfer-learning process documented in IMPLEMENTATION_PLAN.md
+- `detector_validated` flag present in every matches_raw.json for M3
+- CPU fallback (crater_hough) activates automatically when GPU unavailable
 
 ---
 
@@ -153,10 +173,17 @@ Format: ID | Name | Component | Description / Acceptance Criteria / Notes
 
 **Component:** L2 / src/selection/anms.py
 **Description:** SSC (Suppression via Square Covering) variant of ANMS. Applied pre-description inside M0 and M1 matchers. Suppresses weaker keypoints within a radius that adapts to hit a target keypoint budget.
+**Algorithm (Bailo et al., Pattern Recognition Letters 2018):**
+1. Sort all detected keypoints by response descending.
+2. For each keypoint k_i, find its nearest stronger neighbour (first j < i with response[j] > response[i]) using a KD-tree — O(n log n).
+3. The suppression radius r_i = distance to that stronger neighbour.
+4. Square-covering acceptance: select keypoints greedily in order of decreasing r_i, accepting k_i if no already-accepted keypoint lies within r_i — O(K·n) where K = budget.
+5. Stop when budget is reached or all keypoints are processed.
 **Acceptance criteria:**
 - No two selected keypoints are within the computed suppression radius of each other
 - Output budget matches config (allow ±5%)
 - Drop-in compatible after any OpenCV detector
+- Runs in O(n log n + K·n); flag if runtime > 1 s on a 2000-keypoint set
 
 ---
 
@@ -201,10 +228,15 @@ These checks are especially critical for M2 and M3 but apply to all matchers.
 ## F17 — Tile-wise Local Models (High-Latitude / High-Relief Fallback)
 
 **Component:** L4 / src/registration/tilewise.py
-**Description:** When latitude_center > ±55 degrees OR when terrain relief is estimated to be high, replace the global model with tile-wise local affine or homography models (512px tiles, 50% overlap, min 12 inliers per tile). Blend model boundaries using weighted averaging.
+**Description:** When latitude_center > ±55 degrees OR when terrain relief is estimated to be high, replace the global model with tile-wise local affine or homography models (512px tiles, 50% overlap, min 12 inliers per tile). Blend model boundaries using a Gaussian distance-weighted average.
+**Blend weighting formula:** For a pixel x in the overlap zone of tile T with centre c_T:
+```
+w_T(x) = exp( −‖x − c_T‖² / (2 · σ²) ),  σ = 256 px
+```
+The blended displacement at x is the weighted mean of all tile displacements whose coverage includes x. Weights are normalised to sum to 1. Do NOT use uniform averaging — it produces visible seams at tile boundaries.
 **Acceptance criteria:**
 - Trigger condition logged in geometry.json (tilewise=true, trigger_reason)
-- Boundary blending produces no visible seams in the warp output
+- Boundary blending uses the Gaussian formula above with σ=256; no visible seams in warp output
 - Each tile model and its inlier count stored in tile_models array
 
 ---
@@ -212,9 +244,11 @@ These checks are especially critical for M2 and M3 but apply to all matchers.
 ## F18 — GCP Declustering and Z-Score Filtering
 
 **Component:** L4 / src/registration/declustering.py
-**Description:** After RANSAC, enforce minimum spacing between inlier matches (15-20 px, keep nearest cell center), then apply Z-score residual filter (threshold 3.0) to remove outliers. Requires at least 20 matches for Z-score to run.
+**Description:** After RANSAC, enforce GSD-scaled minimum spacing between inlier matches, then apply Z-score residual filter (threshold 3.0) to remove outliers. Requires at least 20 matches for Z-score to run.
+**GSD-scaling (MANDATORY):** min_spacing_px is scaled by (ref_gsd_m / base_gsd_m) where base_gsd_m = 0.5 m (NAC baseline). Examples: NAC ref → 20 px; TMC ref (5 m) → ~200 px; IIRS ref (80 m) → ~3200 px. Without this scaling, physical GCP spacing varies wildly across sensor pairs — a real cross-sensor accuracy regression.
 **Acceptance criteria:**
-- No two output GCPs closer than min_spacing_px
+- No two output GCPs closer than gsd_scaled min_spacing_px in the reference image
+- GSD scaling applied and recorded: `gsd_scale_factor` in geometry.json
 - Z-score filter runs only when > 20 GCPs present; else only spacing filter applies
 - Final GCP count recorded in geometry.json
 
@@ -223,10 +257,16 @@ These checks are especially critical for M2 and M3 but apply to all matchers.
 ## F19 — Sub-pixel Refinement per Inlier
 
 **Component:** L5 / src/refinement/local.py
-**Description:** For each DEGENSAC inlier, extract a 32x32 px patch around the coarse match location in both images. Apply Tukey or Gaussian apodization. Run local NCC or phase-only correlation (POC). Extract integer peak, fit 2D paraboloid to get sub-pixel displacement. Accept if peak sharpness >= tau_q; else keep coarse coordinate. Report RMSE before and after.
+**Description:** For each DEGENSAC inlier, extract a 32x32 px patch around the coarse match location in both images. Apply Tukey or Gaussian apodization. Run local NCC or phase-only correlation (POC). Extract integer peak, fit 2D paraboloid to get sub-pixel displacement. Apply second-peak rejection. Accept if peak sharpness >= tau_q; else keep coarse coordinate. Report RMSE before and after.
+**Second-peak rejection (MANDATORY — restored from v1.1):** After computing the correlation surface, reject the refinement if either:
+- Window variance < tau_v (flat/featureless patch — NCC result is noise)
+- A second local peak exists with amplitude > 0.80 × primary peak (ambiguous / repetitive texture)
+This check is a lunar-specific safety measure for crater-field repetitive texture causing false correlation peaks. Nothing else in the pipeline covers this failure mode.
+**Sharpness threshold note (PRIORITY TUNE):** Default tau_q = 0.15. v1.1 used 0.45 (3× stricter). Validate on pilot pairs before trusting refinement_gain metrics — the two values produce materially different refinement success rates.
 **Acceptance criteria:**
-- Apodization is Tukey or Gaussian (NEVER Blackman -- configuration hard-checks this)
-- refine_success flag set per match; sharpness value stored
+- Apodization is Tukey or Gaussian (NEVER Blackman — configuration hard-checks this)
+- Second-peak rejection check runs on every correlation surface
+- refine_success flag set per match; sharpness value and second_peak_ratio stored
 - RMSE before and after refinement reported in matches_refined.json
 - >= 70% of inliers refine successfully (if below, flag pair as partial_refinement=true)
 - refinement_gain (before minus after RMSE) is positive on >= 60% of test pairs (validates L5 is useful)
