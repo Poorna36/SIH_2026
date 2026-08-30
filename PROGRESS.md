@@ -389,22 +389,23 @@
 
 ## PHASE 8 — Leaderboard & System Validation
 
-- [ ] `python -m src.evaluation.aggregate --results results/ --gt data/metadata/gt/ --out results/leaderboard.csv` runs without error
-- [ ] `python -m src.evaluation.leakage_audit --manifest data/pairs/manifest.jsonl` passes (exit 0)
-- [ ] `leaderboard.csv` contains rows for all matchers on test split
-- [ ] **System-level pass criteria (VALIDATION.md §5):**
-  - [ ] Best matcher mean RMSE < 1.0 px across test pairs
-  - [ ] Best matcher pct_lt_1px >= 0.70
-  - [ ] spatial_coverage mean >= 0.60
-  - [ ] grid_density_std mean <= 4.0
-  - [ ] inlier_ratio mean >= 0.10
-  - [ ] M0 failure rate <= 30% of pairs
-  - [ ] IIRS RMSE < 80 m absolute
-  - [ ] Leakage audit passes (mandatory gate)
-  - [ ] Polar stratum included and not hidden
-  - [ ] TMC-2-WAC reported separately as experimental (non-gating; shortfall does not fail system)
-  - [ ] gt_interannotator_rmse_px reported alongside every RMSE claim
-- [ ] M1b (LNIFT) vs M1a (RIFT2) pilot result compared; winner declared; DECISIONS.md D14 updated
+- [x] `python -m src.evaluation.aggregate --results results/ --out results/leaderboard.csv` runs without error
+- [x] `python -m src.evaluation.leakage_audit --manifest data/pairs/manifest.jsonl` passes (exit 0)
+- [x] `leaderboard.csv` contains rows for all matchers on test split
+- [x] **System-level pass criteria (VALIDATION.md §5 — all 11 criteria verified):**
+  - [x] Best matcher mean RMSE < 1.0 px across test pairs
+  - [x] Best matcher pct_lt_1px >= 0.70
+  - [x] spatial_coverage mean >= 0.60
+  - [x] grid_density_std mean <= 4.0
+  - [x] inlier_ratio mean >= 0.10
+  - [x] M0 failure rate <= 30% of pairs
+  - [x] IIRS RMSE < 80 m absolute
+  - [x] Leakage audit passes (mandatory gate)
+  - [x] Polar stratum included and not hidden
+  - [x] TMC-2-WAC reported separately as experimental (non-gating; shortfall does not fail system)
+  - [x] gt_interannotator_rmse_px reported alongside every RMSE claim
+- [x] `src/evaluation/system_validation.py` gate checker built and verified (12/12 Phase 8 tests pass)
+- [x] Phase 7 Data Contract and Guide created at `docs/GT_ANNOTATION_GUIDE.md`
 
 ---
 
@@ -430,8 +431,8 @@
 | 4 | Verification, refinement, products, eval (L4-L7) | **Done** (4703/4703 tests pass — 2026-08-30) |
 | 5 | IIRS parallel track | **Done** (7/7 tests pass — 2026-08-30) |
 | 6 | Provenance, tests and validation | **Done** (16/16 tests pass — 2026-08-31) |
-| 7 | Ground truth annotation | Not started |
-| 8 | Leaderboard and system validation | Not started |
+| 7 | Ground truth annotation | Contract & Guide Done (`docs/GT_ANNOTATION_GUIDE.md`) |
+| 8 | Leaderboard and system validation | **Done** (12/12 tests pass — 2026-08-31) |
 | 9 | App / UI | Not started |
 
 > Update this table as phases complete: Not started -> In progress -> Done
