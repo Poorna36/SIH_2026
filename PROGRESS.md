@@ -22,13 +22,13 @@
 - [ ] Confirmed only the per-date CK window is present — NOT the full 200 GB set
 
 ### 0.3 — Repository Directory Scaffold
-- [ ] `src/` subdirectories created: `ingest/`, `preprocessing/`, `geometry/`, `matching/`, `selection/`, `registration/`, `refinement/`, `evaluation/`
-- [ ] `scripts/` placeholder files created: `ingest.py`, `build_pairs.py`, `preprocess.py`, `benchmark.py`, `register.py`
-- [ ] `configs/` directory created with files: `ohrc_nac.yaml`, `tmc_wac.yaml`, `iirs_wac.yaml`, `matchers.yaml`, `default.yaml`
-- [ ] `data/pairs/` empty seed files created: `manifest.jsonl`, `skipped.jsonl`, `failures.jsonl`
-- [ ] `results/pair_results/` directory exists; `results/arbitration.log` created
-- [ ] `app/` directory created (empty, for later UI)
-- [ ] `notebooks/` directory created
+- [x] `src/` subdirectories created: `ingest/`, `preprocessing/`, `geometry/`, `matching/`, `selection/`, `registration/`, `refinement/`, `evaluation/`
+- [x] `scripts/` placeholder files created: `ingest.py`, `build_pairs.py`, `preprocess.py`, `benchmark.py`, `register.py`
+- [x] `configs/` directory created with files: `ohrc_nac.yaml`, `tmc_wac.yaml`, `iirs_wac.yaml`, `matchers.yaml`, `default.yaml`
+- [x] `data/pairs/` empty seed files created: `manifest.jsonl`, `skipped.jsonl`, `failures.jsonl`
+- [x] `results/pair_results/` directory exists; `results/arbitration.log` created
+- [x] `app/` directory created (empty, for later UI)
+- [x] `notebooks/` directory created
 
 ### 0.4 — Config Files Written
 - [ ] `configs/default.yaml` written (global seed=42, all data dir paths)
