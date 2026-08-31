@@ -54,10 +54,10 @@ Requires: **Python 3.9+** (stdlib only — `urllib`, `json`, `csv`). No pip inst
 | `DATA_COLLECTION_GUIDE.md` | Full CH-2 (OHRC/TMC-2/IIRS) + LRO data collection walkthrough |
 | `.gitignore` | Keeps all downloaded data out of git (data is re-downloadable) |
 
-## 📚 Architecture docs
+# Architecture docs
 Full pipeline design: `PIPELINE.md`, `ARCHITECTURE.md`, `CONFIGURATION.md`, `INTERFACES.md`, `VALIDATION.md`, `DECISIONS.md`, `FEATURES.md`, `IMPLEMENTATION_PLAN.md`.
 
 ---
 
-## ℹ️ Data provenance
+#Data provenance
 LRO NAC/WAC data is **public domain** (NASA PDS). Source: [Lunar Orbital Data Explorer (ODE)](https://ode.rsl.wustl.edu/moon/) REST API. Chandrayaan-2 source data comes from ISRO's [PRADAN](https://pradan.issdc.gov.in/) archive (requires a free account; manual download).
