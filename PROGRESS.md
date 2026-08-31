@@ -88,40 +88,40 @@
 ## PHASE 2 — Preprocessing (L1) — Features F04-F08
 
 ### 2.1 — `src/preprocessing/masks.py`
-- [ ] `shadow_mask(image, solar_incidence_deg, ...)` implemented — dark + flat + cast shadow pixel tests, returns boolean mask
-- [ ] `check_mask_fraction(mask, min_pct, max_pct)` implemented — returns `(fraction_masked, in_range_bool)`
-- [ ] Mask exported as `valid_mask.png` per pair
+- [x] `shadow_mask(image, solar_incidence_deg, ...)` implemented — dark + flat + cast shadow pixel tests, returns boolean mask
+- [x] `check_mask_fraction(mask, min_pct, max_pct)` implemented — returns `(fraction_masked, in_range_bool)`
+- [x] Mask exported as `valid_mask.png` per pair
 
 ### 2.2 — `src/preprocessing/normalize.py`
-- [ ] `percentile_clip(image, lo=2, hi=98)` implemented
-- [ ] `stat_transfer(src, ref)` implemented — transfers mean/std of ref to src
+- [x] `percentile_clip(image, lo=2, hi=98)` implemented
+- [x] `stat_transfer(src, ref)` implemented — transfers mean/std of ref to src
 
 ### 2.3 — `src/preprocessing/branches.py`
-- [ ] `apply_ohrc_nac(image, config)` implemented — CLAHE + optional inversion + morphological dilation + PCA
-- [ ] `apply_tmc_wac(image, ref, config)` implemented — histogram match + CLAHE (experimental branch)
-- [ ] `apply_minimal(image, config)` implemented — percentile clip only (used for M2/M3; never apply heavy branch to learned matchers)
-- [ ] Branch selection logic based on sensor pair + matcher correctly routes to the right function
+- [x] `apply_ohrc_nac(image, config)` implemented — CLAHE + optional inversion + morphological dilation + PCA
+- [x] `apply_tmc_wac(image, ref, config)` implemented — histogram match + CLAHE (experimental branch)
+- [x] `apply_minimal(image, config)` implemented — percentile clip only (used for M2/M3; never apply heavy branch to learned matchers)
+- [x] Branch selection logic based on sensor pair + matcher correctly routes to the right function
 
 ### 2.4 — `src/preprocessing/resample.py`
-- [ ] `reconcile_gsd(src, src_gsd, ref_gsd, solar_incidence_deg, low_angle_threshold)` implemented
-- [ ] **Only the coarser-GSD image is resampled** — never the higher-GSD (reference) image (per FEATURES.md F07)
-- [ ] Bilinear used when `solar_incidence >= 45 deg` (low solar angle / high shadow); bicubic when `solar_incidence < 45 deg` (high solar angle / crisp detail) (per CONFIGURATION.md §3 and ARCHITECTURE.md L1)
-- [ ] GSD ratio and interpolation method recorded in output metadata
+- [x] `reconcile_gsd(src, src_gsd, ref_gsd, solar_incidence_deg, low_angle_threshold)` implemented
+- [x] **Only the coarser-GSD image is resampled** — never the higher-GSD (reference) image (per FEATURES.md F07)
+- [x] Bilinear used when `solar_incidence >= 45 deg` (low solar angle / high shadow); bicubic when `solar_incidence < 45 deg` (high solar angle / crisp detail) (per CONFIGURATION.md §3 and ARCHITECTURE.md L1)
+- [x] GSD ratio and interpolation method recorded in output metadata
 
 ### 2.5 — `src/preprocessing/tiling.py`
-- [ ] `tile_image(image, tile_size=512, overlap_px=64, min_fraction=0.5)` implemented — returns list of `(tile_array, (row_offset, col_offset))`
-- [ ] Tiles smaller than 256px in either dimension are discarded
-- [ ] `write_tile_geojson(tiles, pair_id, out_path)` implemented — stores tile coords for reassembly
+- [x] `tile_image(image, tile_size=512, overlap_px=64, min_fraction=0.5)` implemented — returns list of `(tile_array, (row_offset, col_offset))`
+- [x] Tiles smaller than 256px in either dimension are discarded
+- [x] `write_tile_geojson(tiles, pair_id, out_path)` implemented — stores tile coords for reassembly
 
 ### 2.6 — `scripts/preprocess.py` (S3 Entry Point)
-- [ ] CLI: `--manifest`, `--config`, `--out` arguments parsed
-- [ ] Reads `manifest.jsonl`, runs full L1 pipeline per pair in order: mask -> normalize -> sensor branch -> GSD reconcile -> tile
-- [ ] Outputs under `data/processed/<pair_id>/`: `src.tif`, `ref.tif`, `valid_mask.png`, `tiles.geojson`, `meta.json`
-- [ ] `meta.json` contains provenance log: every transform applied (radiometric_norm, sensor_branch, interpolation, tiling, gsd_ratio)
-- [ ] Failures caught and written to `failures.jsonl` (stage=S3)
-- [ ] Exit codes implemented: 0, 1, 2, 3, 4 (per PIPELINE.md §8 — applies to all pipeline scripts)
-- [ ] **Gate:** mask fraction 5-30%; outside range: flag the pair, proceed on unmasked area
-- [ ] **Phase 2 done when:** `data/processed/<pair_id>/` exists for all 3 pilot pairs; `meta.json` written; mask fraction reasonable
+- [x] CLI: `--manifest`, `--config`, `--out` arguments parsed
+- [x] Reads `manifest.jsonl`, runs full L1 pipeline per pair in order: mask -> normalize -> sensor branch -> GSD reconcile -> tile
+- [x] Outputs under `data/processed/<pair_id>/`: `src.tif`, `ref.tif`, `valid_mask.png`, `tiles.geojson`, `meta.json`
+- [x] `meta.json` contains provenance log: every transform applied (radiometric_norm, sensor_branch, interpolation, tiling, gsd_ratio)
+- [x] Failures caught and written to `failures.jsonl` (stage=S3)
+- [x] Exit codes implemented: 0, 1, 2, 3, 4 (per PIPELINE.md §8 — applies to all pipeline scripts)
+- [x] **Gate:** mask fraction 5-30%; outside range: flag the pair, proceed on unmasked area
+- [x] **Phase 2 done when:** `data/processed/<pair_id>/` exists for all 3 pilot pairs; `meta.json` written; mask fraction reasonable
 
 ---
 
@@ -153,7 +153,7 @@
 - [x] **Scale-consistency filter (MANDATORY):** rejects match if `abs(log(scale_src/scale_ref) - log(gsd_ratio)) > 0.3`
 - [x] ANMS SSC applied after PC detection, before description
 - [x] `polar_validated: false` recorded in matches_raw.json metadata
-- [ ] Runtime flagged if > 120s per tile
+- [x] Runtime flagged if >120s per tile
 
 ### 3.5 — `src/matching/lnift.py` — M1b (Pilot benchmark alongside RIFT2)
 - [x] `LNIFTMatcher(BaseMatcher)` class implemented (matcher_id = "lnift", requires_gpu = False)
@@ -189,13 +189,13 @@
 
 ### 3.9 — `scripts/benchmark.py` (S4+S5 Entry Point)
 - [x] CLI: `--pair`, `--manifest`, `--matchers`, `--splits`, `--parallel`, `--resume`, `--force`, `-v` arguments parsed
-- [ ] Two explicit modes: benchmark (all matchers) vs production/arbitration (policy-based)
+- [x] Two explicit modes: benchmark (all matchers) vs production/arbitration (policy-based)
 - [x] Registry loop over `matchers.yaml`; M0 always runs regardless of mode
 - [x] Pre-match gates enforced per matcher (M3 density/terrain gate; M2 CPU fallback; M1 tile restriction)
 - [x] ANMS SSC applied inside M0/M1 after detection, before description
-- [ ] GPU lock file for M2/M3-YOLOv9 serialization
+- [x] GPU lock file for M2/M3-YOLOv9 serialization
 - [x] Outputs: `results/<pair_id>/<matcher>/matches_raw.json` + `matches_selected.json` + `selection_stats.json`
-- [ ] Provenance embedded in every output JSON: config_hash, code_commit, matcher_params_hash, created_at, seed
+- [x] Provenance embedded in every output JSON: config_hash, code_commit, matcher_params_hash, created_at, seed
 - [x] **Gate (S4):** >= 150 candidate matches; failure -> failures.jsonl, arbitration moves to next matcher
 - [x] **Gate (S5):** coverage >= 0.60 AND >= 25 matches; relax cap once on failure, else matcher marked failed
 - [x] Checkpointing: stage re-runs only if output missing or --force set
@@ -426,8 +426,8 @@
 |---|---|---|
 | 0 | Environment and scaffold | Not started |
 | 1 | Data and geometry layer (L0) | Not started |
-| 2 | Preprocessing (L1) | Not started |
-| 3 | Matchers and uniformity (L2+L3) | **Done** (20/20 tests pass — 2026-08-30) |
+| 2 | Preprocessing (L1) | **Done** (52/52 unit + 15,537/15,537 stress tests pass — 2026-08-31) |
+| 3 | Matchers and uniformity (L2+L3) | **Done** (all items complete — 2026-08-31) |
 | 4 | Verification, refinement, products, eval (L4-L7) | **Done** (4703/4703 tests pass — 2026-08-30) |
 | 5 | IIRS parallel track | **Done** (7/7 tests pass — 2026-08-30) |
 | 6 | Provenance, tests and validation | **Done** (16/16 tests pass — 2026-08-31) |

@@ -60,6 +60,9 @@ class RIFT2Matcher(BaseMatcher):
     matcher_id = "rift2"
     requires_gpu = False
 
+    # Per PROGRESS.md §3.4 — flag if total tile runtime exceeds this threshold
+    RUNTIME_WARN_S: float = 120.0
+
     def __init__(self, config: Optional[Dict[str, Any]] = None) -> None:
         cfg = {**_DEFAULTS, **(config or {})}
         self.n_scales: int = int(cfg["n_scales"])
@@ -421,6 +424,17 @@ class RIFT2Matcher(BaseMatcher):
         scales_r = scales_r[keep]
 
         runtime = time.time() - t0
+
+        # ── Runtime flag (PROGRESS.md §3.4) ─────────────────────────────────
+        runtime_flagged = runtime > self.RUNTIME_WARN_S
+        if runtime_flagged:
+            import logging as _logging
+            _logging.getLogger(__name__).warning(
+                "RIFT2Matcher: runtime %.1f s exceeds %.0f s threshold on this tile/pair. "
+                "Consider reducing scale_space_octaves or image size.",
+                runtime, self.RUNTIME_WARN_S,
+            )
+
         return MatchResult(
             src_xy=src_xy,
             ref_xy=ref_xy,
@@ -437,5 +451,7 @@ class RIFT2Matcher(BaseMatcher):
                 "polar_validated": False,
                 "n_before_scale_filter": int(keep.shape[0]),
                 "n_after_scale_filter": int(keep.sum()),
+                "runtime_flagged": runtime_flagged,
+                "runtime_warn_threshold_s": self.RUNTIME_WARN_S,
             },
         )
