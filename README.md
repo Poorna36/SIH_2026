@@ -6,7 +6,7 @@ This repo currently contains the **data-collection + LRO reference automation la
 
 ---
 
-## 🚀 Clone & get the LRO reference data yourself (no login, no manual download)
+# Clone & get the LRO reference data yourself (no login, no manual download)
 
 ```bash
 git clone <this-repo-url>
@@ -41,11 +41,11 @@ Requires: **Python 3.9+** (stdlib only — `urllib`, `json`, `csv`). No pip inst
 | `--min-res / --max-res` | GSD band filter (m/px) |
 | `--manifest file.csv` | Batch: loop over ROIs in the CSV |
 
-> ⚠️ The `_PYR.TIF` browse files are **downsampled quick-looks**. For sub-pixel feature matching against OHRC, always include `--download-img`.
+>  The `_PYR.TIF` browse files are **downsampled quick-looks**. For sub-pixel feature matching against OHRC, always include `--download-img`.
 
 ---
 
-## 📁 What's in the repo
+# What's in the repo
 
 | Path | Purpose |
 |---|---|
