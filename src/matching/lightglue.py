@@ -199,60 +199,101 @@ class LightGlueMatcher(BaseMatcher):
         force_device: Optional["torch.device"] = None,
     ) -> MatchResult:
         import torch
+        import cv2
 
         t0 = time.time()
         device = force_device if force_device is not None else self._get_device()
         cpu_mode = str(device) == "cpu"
         self._ensure_models(device)
 
+        src_gray = self._to_gray(src)
+        ref_gray = self._to_gray(ref)
+        h, w = src_gray.shape[:2]
+
         def _to_tensor(img: np.ndarray) -> "torch.Tensor":
-            gray = self._to_gray(img).astype(np.float32) / 255.0
+            gray = img.astype(np.float32) / 255.0
             return torch.tensor(gray, dtype=torch.float32)[None, None].to(device)
 
-        t_src = _to_tensor(src)
-        t_ref = _to_tensor(ref)
-
+        t_ref = _to_tensor(ref_gray)
         with torch.no_grad():
-            feats_src = self._extractor.extract(t_src)
             feats_ref = self._extractor.extract(t_ref)
-            matches_out = self._matcher({"image0": feats_src, "image1": feats_ref})
 
-        # Unbatch
-        feats_src_ub = rbd(feats_src)
-        feats_ref_ub = rbd(feats_ref)
-        matches_ub = rbd(matches_out)
+        best_src_xy: np.ndarray = np.empty((0, 2), dtype=np.float32)
+        best_ref_xy: np.ndarray = np.empty((0, 2), dtype=np.float32)
+        best_conf: np.ndarray = np.empty(0, dtype=np.float32)
+        best_angle: float = 0.0
 
-        kp0 = feats_src_ub["keypoints"].cpu().numpy()        # (N0, 2) — x, y
-        kp1 = feats_ref_ub["keypoints"].cpu().numpy()        # (N1, 2)
-        m_idx = matches_ub["matches"].cpu().numpy()          # (M, 2)
-        m_conf = matches_ub["matching_scores0"].cpu().numpy()  # (M,)
+        # Step 1: Try angles (0° first; if < 150 matches, sweep other 7 cardinal/diagonal angles)
+        angles_to_try = [0]
+        for angle in angles_to_try:
+            if angle != 0:
+                M_rot = cv2.getRotationMatrix2D((w / 2.0, h / 2.0), angle, 1.0)
+                src_transformed = cv2.warpAffine(src_gray, M_rot, (w, h))
+            else:
+                src_transformed = src_gray
 
-        if len(m_idx) == 0:
+            t_src = _to_tensor(src_transformed)
+            with torch.no_grad():
+                feats_src = self._extractor.extract(t_src)
+                matches_out = self._matcher({"image0": feats_src, "image1": feats_ref})
+
+            feats_src_ub = rbd(feats_src)
+            feats_ref_ub = rbd(feats_ref)
+            matches_ub = rbd(matches_out)
+
+            kp0 = feats_src_ub["keypoints"].cpu().numpy()
+            kp1 = feats_ref_ub["keypoints"].cpu().numpy()
+            m_idx = matches_ub["matches"].cpu().numpy()
+
+            if len(m_idx) == 0:
+                continue
+
+            if "scores" in matches_ub:
+                m_conf = matches_ub["scores"].cpu().numpy()
+            elif "matching_scores0" in matches_ub:
+                m_conf = matches_ub["matching_scores0"].cpu().numpy()[m_idx[:, 0]]
+            else:
+                m_conf = np.ones(len(m_idx), dtype=np.float32)
+
+            conf_mask = m_conf >= self.conf_thresh
+            m_idx = m_idx[conf_mask]
+            m_conf = m_conf[conf_mask]
+
+            if len(m_idx) == 0:
+                continue
+
+            cur_src = kp0[m_idx[:, 0]].astype(np.float32)
+            cur_ref = kp1[m_idx[:, 1]].astype(np.float32)
+
+            # Un-rotate source points back to original coordinate system
+            if angle != 0:
+                M_inv = cv2.getRotationMatrix2D((w / 2.0, h / 2.0), -angle, 1.0)
+                cur_src_h = np.hstack([cur_src, np.ones((len(cur_src), 1), dtype=np.float32)])
+                cur_src = (M_inv @ cur_src_h.T).T.astype(np.float32)
+
+            if len(cur_src) > len(best_src_xy):
+                best_src_xy = cur_src
+                best_ref_xy = cur_ref
+                best_conf = m_conf.astype(np.float32)
+                best_angle = float(angle)
+
+            # If 0° yielded plenty of matches (>= 150), no rotation sweep needed
+            if angle == 0 and len(best_src_xy) < 150:
+                angles_to_try.extend([45, 90, 135, 180, 225, 270, 315])
+
+            if len(best_src_xy) >= 200:
+                break
+
+        if len(best_src_xy) == 0:
             return self._empty_result(
                 runtime_s=time.time() - t0,
-                reason="no_matches_from_lightglue",
+                reason="no_matches_found_across_orientations",
                 cpu_fallback=cpu_mode,
             )
-
-        # Filter by confidence threshold
-        conf_mask = m_conf >= self.conf_thresh
-        m_idx = m_idx[conf_mask]
-        m_conf = m_conf[conf_mask]
-
-        if len(m_idx) == 0:
-            return self._empty_result(
-                runtime_s=time.time() - t0,
-                reason="conf_threshold_filtered_all",
-                cpu_fallback=cpu_mode,
-            )
-
-        src_xy = kp0[m_idx[:, 0]].astype(np.float32)  # col, row = x, y
-        ref_xy = kp1[m_idx[:, 1]].astype(np.float32)
-        confidence = m_conf.astype(np.float32)
 
         # ── F2 checks BEFORE returning (MANDATORY — FEATURES.md F12) ─────────
         src_xy, ref_xy, confidence, n_removed = self._f2_checks(
-            src_xy, ref_xy, confidence,
+            best_src_xy, best_ref_xy, best_conf,
             src_shape=src.shape, ref_shape=ref.shape,
         )
 
@@ -262,7 +303,7 @@ class LightGlueMatcher(BaseMatcher):
             ref_xy=ref_xy,
             confidence=confidence,
             scale=np.ones(len(src_xy), dtype=np.float32),
-            angle_deg=np.zeros(len(src_xy), dtype=np.float32),
+            angle_deg=np.full(len(src_xy), best_angle, dtype=np.float32),
             runtime_s=runtime,
             matcher_params={
                 "matcher_id": self.matcher_id,
@@ -270,6 +311,7 @@ class LightGlueMatcher(BaseMatcher):
                 "confidence_threshold": self.conf_thresh,
                 "f2_checks_applied": True,
                 "f2_removed": int(n_removed),
+                "rotation_angle_deg": best_angle,
                 "gsd_ratio": gsd_ratio,
             },
         )

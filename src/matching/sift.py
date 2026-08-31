@@ -160,8 +160,10 @@ class SIFTMatcher(BaseMatcher):
         scale_ratio = scales_src_a / (scales_ref_a + 1e-9)
 
         # ── Scale-consistency filter (ARCHITECTURE.md §4) ─────────────────────
+        # If gsd_ratio is nominal (1.0), allow up to 3x scale variation (log(3) ~ 1.1)
+        tol = self.max_log_scale_dev if abs(gsd_ratio - 1.0) > 1e-3 else max(self.max_log_scale_dev, 1.2)
         keep = self._scale_consistency_mask(
-            scales_src_a, scales_ref_a, gsd_ratio, self.max_log_scale_dev
+            scales_src_a, scales_ref_a, gsd_ratio, tol
         )
         src_xy = src_xy[keep]
         ref_xy = ref_xy[keep]

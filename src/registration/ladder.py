@@ -125,7 +125,6 @@ def _run_degensac(
                 px_th=threshold,
                 conf=confidence,
                 max_iters=max_iter,
-                enable_degeneracy_check=True,
             )
             return H, mask.astype(bool)
         except Exception as exc:  # pragma: no cover
@@ -276,6 +275,7 @@ def model_ladder(
             t_gsd_used = min(t_gsd * WIDEN_FACTOR, T_GSD_MAX)
             logger.info("Widening t_gsd to %.3f px for retry", t_gsd_used)
 
+        fitted_models: List[ModelResult] = []
         for model_name, level, fit_fn in MODELS:
             if len(src_f2) < 4:
                 logger.warning("Too few matches (%d) for %s", len(src_f2), model_name)
@@ -315,17 +315,18 @@ def model_ladder(
                 rmse_px=rmse,
                 t_gsd_used=t_gsd_used,
             )
+            fitted_models.append(result)
 
-            if rmse <= stop_on_rmse_below:
-                best = result
-                break   # accept simplest passing model
-
-            # Store best even if RMSE doesn't pass (to use as fallback)
-            if best is None or rmse < best.rmse_px:
-                best = result
-
-        if best is not None and best.rmse_px <= stop_on_rmse_below:
-            break  # don't need widened retry
+        if fitted_models:
+            max_inliers = max(m.inlier_count for m in fitted_models)
+            # Accept simplest model that explains >= 75% of max inliers with RMSE <= stop_on_rmse_below
+            candidates = [m for m in fitted_models if m.inlier_count >= 0.75 * max_inliers and m.rmse_px <= stop_on_rmse_below]
+            if candidates:
+                best = min(candidates, key=lambda m: m.ladder_level)
+                break
+            else:
+                # If none passes RMSE threshold, choose the one with lowest RMSE / highest inliers
+                best = min(fitted_models, key=lambda m: (m.rmse_px, -m.inlier_count))
 
         if widen_attempt == 0 and (best is None or best.inlier_ratio < INLIER_RATIO_MIN):
             continue  # try widened

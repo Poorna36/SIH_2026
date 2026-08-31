@@ -34,10 +34,14 @@ import sys
 import tempfile
 import time
 from contextlib import contextmanager
+import numpy as np
 from pathlib import Path
 from typing import Any, Dict, Generator, List, Optional
 
-import numpy as np
+# Ensure workspace root is on sys.path
+_ROOT = Path(__file__).resolve().parent.parent
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
 
 # ── Provenance (F25) ─────────────────────────────────────────────────────────
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -253,7 +257,21 @@ def _run_pair_matcher(
 
     # ── Load preprocessed images ──────────────────────────────────────────────
     src_path = pair.get("src_processed")
+    if not src_path:
+        p_src = Path("data/processed") / pair_id / "src.tif"
+        if p_src.exists():
+            src_path = p_src
+        elif "src" in pair and isinstance(pair["src"], dict) and pair["src"].get("cub_path"):
+            src_path = Path(pair["src"]["cub_path"])
+
     ref_path = pair.get("ref_processed")
+    if not ref_path:
+        p_ref = Path("data/processed") / pair_id / "ref.tif"
+        if p_ref.exists():
+            ref_path = p_ref
+        elif "ref" in pair and isinstance(pair["ref"], dict) and pair["ref"].get("path"):
+            ref_path = Path(pair["ref"]["path"])
+
     if not src_path or not ref_path:
         reason = "missing_processed_image_paths"
         _log_failure(out_root, pair_id, mid, "S4", reason)

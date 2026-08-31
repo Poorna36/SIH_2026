@@ -35,6 +35,11 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 
+# Ensure workspace root is on sys.path
+_ROOT = Path(__file__).resolve().parent.parent
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
+
 from src.evaluation.metrics import (
     compute_all_metrics,
     gt_interannotator_rmse,
