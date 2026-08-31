@@ -50,6 +50,10 @@ results/*
 *.tar
 *.tar.gz
 
+# Raw ISRO Chandrayaan product directories (in root or subdirs)
+ch1_*
+ch2_*
+
 # SPICE Kernels & Navigation files
 *.bc
 *.bsp

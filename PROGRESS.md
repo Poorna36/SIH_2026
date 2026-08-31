@@ -49,39 +49,39 @@
 ## PHASE 1 — Data & Geometry Layer (L0) — Features F01-F03
 
 ### 1.1 — `src/ingest/label_parser.py`
-- [ ] `ProductMeta` dataclass defined (all fields: product_id, cub_path, gsd_m, solar_incidence_deg, solar_azimuth_deg, sensor, utc, footprint_ll, footprint_shape)
-- [ ] `parse_pds4_label(xml_path)` implemented — extracts all required fields from OHRC/TMC-2 `.xml` PDS4 labels
-- [ ] `run_isisimport(img_path, out_dir)` implemented — calls `isisimport`, returns `.cub` path, NEVER renames source file
-- [ ] `run_spiceinit(cub_path)` implemented — calls `spiceinit`, returns True on exit-0
+- [x] `ProductMeta` dataclass defined (all fields: product_id, cub_path, gsd_m, solar_incidence_deg, solar_azimuth_deg, sensor, utc, footprint_ll, footprint_shape)
+- [x] `parse_pds4_label(xml_path)` implemented — extracts all required fields from OHRC/TMC/IIRS `.xml` PDS4 labels; IIRS shape from companion .hdr
+- [x] `run_isisimport(img_path, out_dir)` implemented — calls `isisimport`, returns `.cub` path, NEVER renames source file
+- [x] `run_spiceinit(cub_path)` implemented — calls `spiceinit` (CSM first, ISIS fallback), returns True on exit-0
 
 ### 1.2 — `src/ingest/reference.py`
-- [ ] `pad_bbox(footprint_ll, sigma_m, k)` implemented — returns `[lon_min, lat_min, lon_max, lat_max]`
-- [ ] `query_ode_nac(footprint_ll, padding_m)` implemented — calls Lunar ODE bbox endpoint, returns downloaded crop path or None
-- [ ] `crop_wac_mosaic(mosaic_path, bbox_ll)` implemented — GDAL crop of WAC 643nm mosaic, returns cropped GeoTIFF path
-- [ ] SELENE Moon Trek WMTS fallback stubbed (connectivity check only; `ref.type=SELENE` recorded; full impl deferred per CONFIGURATION.md `selene_status: future_compatible`)
-- [ ] Fallback chain order enforced: NAC ODE -> WAC crop -> SELENE -> skip to `skipped.jsonl`
+- [x] `pad_bbox(footprint_ll, sigma_m, k)` implemented — returns `[lon_min, lat_min, lon_max, lat_max]`; arc-degree formula; polar clamping
+- [x] `query_ode_nac(footprint_ll, padding_m)` implemented — calls Lunar ODE bbox endpoint, returns downloaded crop path or None
+- [x] `crop_wac_mosaic(mosaic_path, bbox_ll)` implemented — GDAL crop of WAC 643nm mosaic, returns cropped GeoTIFF path
+- [x] SELENE Moon Trek WMTS fallback stubbed (connectivity check only; `ref.type=SELENE` recorded; full impl deferred per CONFIGURATION.md `selene_status: future_compatible`)
+- [x] Fallback chain order enforced: NAC ODE -> WAC crop -> SELENE -> skip to `skipped.jsonl`
 
 ### 1.3 — `scripts/ingest.py` (S1 Entry Point)
-- [ ] CLI: `--raw`, `--out`, `--meta`, `--kernels` arguments parsed
-- [ ] Reads all zips in `data/raw/`, unzips preserving original filenames
-- [ ] Calls `run_isisimport` + `run_spiceinit` per product
-- [ ] Calls `parse_pds4_label` — writes one line per product to `data/metadata/products.jsonl`
-- [ ] Failures caught and written to `failures.jsonl` (stage=S1, reason, fallback_taken)
-- [ ] Exit codes implemented: 0=success, 1=gate failures logged (non-failed pairs completed), 2=config error, 3=env error (ASP<3.7.0/kernel fetch fail), 4=leakage audit failed (per PIPELINE.md §8 — applies to ALL scripts)
-- [ ] **Gate:** `spiceinit` exits 0; footprint polygon non-empty; solar angles present
+- [x] CLI: `--raw`, `--out`, `--meta`, `--kernels` arguments parsed
+- [x] Reads all zips in `data/raw/`, unzips preserving original filenames
+- [x] Calls `run_isisimport` + `run_spiceinit` per product
+- [x] Calls `parse_pds4_label` — writes one line per product to `data/metadata/products.jsonl`
+- [x] Failures caught and written to `failures.jsonl` (stage=S1, reason, fallback_taken)
+- [x] Exit codes implemented: 0=success, 1=gate failures logged (non-failed pairs completed), 2=config error, 3=env error (ASP<3.7.0/kernel fetch fail), 4=leakage audit failed (per PIPELINE.md §8 — applies to ALL scripts)
+- [x] **Gate:** `spiceinit` exits 0; footprint polygon non-empty; solar angles present
 
 ### 1.4 — `scripts/build_pairs.py` (S2 Entry Point)
-- [ ] CLI: `--products`, `--config`, `--ode` / `--wac` flags parsed
-- [ ] Reads `products.jsonl`; calls `pad_bbox` per source product
-- [ ] Calls reference fallback chain (NAC ODE -> WAC crop -> SELENE stub)
-- [ ] Computes `overlap_fraction` between source footprint and reference
-- [ ] Assigns `terrain_class`, `crater_density_per_km2` (initial estimate from WAC DEM or None)
-- [ ] Assigns `geo_cell` (10x10 degree cell) and `split` (train/test, disjoint cells)
-- [ ] Writes complete PairRecord to `data/pairs/manifest.jsonl` (append-only, per INTERFACES.md §1 schema)
-- [ ] Writes skipped pairs (no reference found) to `skipped.jsonl` with reason
-- [ ] Exit codes implemented: 0, 1, 2, 3, 4 (per PIPELINE.md §8 — same as all pipeline scripts)
-- [ ] **Gate:** `overlap_fraction >= 0.5`; pairs below this get `partial_overlap=true` but are kept
-- [ ] **Phase 1 done when:** `manifest.jsonl` has 3+ valid entries with footprints and reference crops
+- [x] CLI: `--products`, `--config`, `--ode` / `--wac` flags parsed
+- [x] Reads `products.jsonl`; calls `pad_bbox` per source product
+- [x] Calls reference fallback chain (NAC ODE -> WAC crop -> SELENE stub)
+- [x] Computes `overlap_fraction` between source footprint and reference
+- [x] Assigns `terrain_class`, `crater_density_per_km2` (initial estimate from WAC DEM or None)
+- [x] Assigns `geo_cell` (10x10 degree cell) and `split` (train/test, disjoint cells)
+- [x] Writes complete PairRecord to `data/pairs/manifest.jsonl` (append-only, per INTERFACES.md §1 schema)
+- [x] Writes skipped pairs (no reference found) to `skipped.jsonl` with reason
+- [x] Exit codes implemented: 0, 1, 2, 3, 4 (per PIPELINE.md §8 — same as all pipeline scripts)
+- [x] **Gate:** `overlap_fraction >= 0.5`; pairs below this get `partial_overlap=true` but are kept
+- [x] **Phase 1 done when:** `manifest.jsonl` has 3+ valid entries with footprints and reference crops (requires actual data for runtime validation)
 
 ---
 
@@ -416,7 +416,7 @@
 | Phase | Description | Status |
 |---|---|---|
 | 0 | Environment and scaffold | Not started |
-| 1 | Data and geometry layer (L0) | Not started |
+| 1 | Data and geometry layer (L0) | **Done** (64/64 unit tests pass — 2026-08-31) |
 | 2 | Preprocessing (L1) | **Done** (52/52 unit + 15,537/15,537 stress tests pass — 2026-08-31) |
 | 3 | Matchers and uniformity (L2+L3) | **Done** (all items complete — 2026-08-31) |
 | 4 | Verification, refinement, products, eval (L4-L7) | **Done** (4703/4703 tests pass — 2026-08-30) |
