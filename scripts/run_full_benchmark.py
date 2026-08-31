@@ -104,20 +104,22 @@ def run_benchmark(
         terrain = pair.get("terrain_class", "unknown")
         src_path = _ROOT / pair["src"]["cub_path"]
         ref_path = _ROOT / pair["ref"]["path"]
-        gt_path = _ROOT / pair["gt_path"]
+        gt_path = (_ROOT / pair["gt_path"]) if pair.get("gt_path") else None
 
         # Read images
         with rasterio.open(src_path) as s, rasterio.open(ref_path) as r:
             src_img = s.read(1)
             ref_img = r.read(1)
 
-        # Read GT
-        with open(gt_path, "r", encoding="utf-8") as f:
-            gt_data = json.load(f)
-
-        eval_pts = [p for p in gt_data["checkpoints"] if p["partition"] == "eval"]
-        src_eval = np.array([p["src_xy"] for p in eval_pts], dtype=np.float64)
-        ref_gt = np.array([p["ref_xy"] for p in eval_pts], dtype=np.float64)
+        # Read GT if available
+        eval_pts, src_eval, ref_gt = [], np.zeros((0, 2)), np.zeros((0, 2))
+        if gt_path and gt_path.exists():
+            with open(gt_path, "r", encoding="utf-8") as f:
+                gt_data = json.load(f)
+            eval_pts = [p for p in gt_data.get("checkpoints", []) if p.get("partition") == "eval"]
+            if eval_pts:
+                src_eval = np.array([p["src_xy"] for p in eval_pts], dtype=np.float64)
+                ref_gt = np.array([p["ref_xy"] for p in eval_pts], dtype=np.float64)
 
         logger.info("\n-------------------------------------------------------------------------")
         logger.info("📍 [%02d/%02d] Pair: %s | Terrain: %s | GT eval points: %d",

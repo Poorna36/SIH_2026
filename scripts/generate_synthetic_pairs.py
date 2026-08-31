@@ -497,9 +497,9 @@ def generate_synthetic_dataset(
             "latitude_center_deg": profile["latitude_center_deg"],
             "terrain_class": profile["terrain_class"],
             "crater_density_per_km2": profile["crater_density"],
-            "geo_cell": f"{int(profile['latitude_center_deg'] // 10 * 10)}_0",
+            "geo_cell": f"{int(profile['latitude_center_deg'] // 10 * 10)}_{0 if split == 'train' else 100}",
             "split": split,
-            "gt_path": str(gt_file_path.relative_to(output_base)),
+            "gt_path": str(gt_file_path.relative_to(output_base)) if split == "test" else None,
             "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         }
         manifest_entries.append(pair_record)

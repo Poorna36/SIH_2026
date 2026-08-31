@@ -98,11 +98,12 @@ def read_qub(qub_path: Union[str, Path]) -> Tuple[np.ndarray, IIRSMetadata]:
     # Case A: NumPy archive (.npz or .npy)
     if path.suffix in (".npz", ".npy"):
         if path.suffix == ".npz":
-            data = np.load(str(path), allow_pickle=True)
-            cube = data["cube"].astype(np.float32)
-            meta_dict = data["meta"].item() if "meta" in data else {}
+            with np.load(str(path), allow_pickle=True) as data:
+                cube = np.array(data["cube"], dtype=np.float32)
+                meta_dict = data["meta"].item() if "meta" in data else {}
         else:
-            cube = np.load(str(path)).astype(np.float32)
+            with np.load(str(path)) as data:
+                cube = np.array(data, dtype=np.float32)
             meta_dict = {}
 
         if cube.ndim == 2:
@@ -584,9 +585,11 @@ class IIRSMatcher:
             if _CV2_AVAILABLE:
                 ref_img_raw = cv2.imread(str(ref_path), cv2.IMREAD_GRAYSCALE)
                 if ref_img_raw is None:
-                    ref_img_raw = np.load(str(ref_path)).astype(np.float32)
+                    with np.load(str(ref_path)) as data:
+                        ref_img_raw = np.array(data, dtype=np.float32)
             else:
-                ref_img_raw = np.load(str(ref_path)).astype(np.float32)
+                with np.load(str(ref_path)) as data:
+                    ref_img_raw = np.array(data, dtype=np.float32)
             ref_img = _normalize_2d(ref_img_raw.astype(np.float32))
         else:
             ref_img = _normalize_2d(np.asarray(wac_reference, dtype=np.float32))

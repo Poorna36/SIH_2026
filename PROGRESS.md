@@ -414,7 +414,7 @@
 
 | Phase | Description | Status |
 |---|---|---|
-| 0 | Environment and scaffold | Not started |
+| 0 | Environment and scaffold | **Done** (Verified real IIRS PDS4 data & environment — 2026-08-31) |
 | 1 | Data and geometry layer (L0) | **Done** (64/64 unit tests pass — 2026-08-31) |
 | 2 | Preprocessing (L1) | **Done** (52/52 unit + 15,537/15,537 stress tests pass — 2026-08-31) |
 | 3 | Matchers and uniformity (L2+L3) | **Done** (all items complete — 2026-08-31) |

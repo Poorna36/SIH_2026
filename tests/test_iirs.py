@@ -181,8 +181,8 @@ def test_iirs_05_end_to_end_synthetic_registration():
             gsd_m=80.0,
         )
 
-        qub_data = np.load(str(qub_path))
-        base_slice = qub_data["cube"][0]
+        with np.load(str(qub_path)) as qub_data:
+            base_slice = np.array(qub_data["cube"][0])
         wac_ref = np.roll(base_slice, shift=(4, 3), axis=(0, 1))
 
         config = {
