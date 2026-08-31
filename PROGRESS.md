@@ -409,16 +409,7 @@
 
 ---
 
-## PHASE 9 — App / UI (Post-Pipeline Only)
 
-> Only start after the pipeline is reliable and leaderboard passes.
-
-- [ ] `app/` directory scaffold created
-- [ ] Basic viewer for QC images (qc_checkerboard, qc_matches, qc_residuals)
-- [ ] Leaderboard display from results/leaderboard.csv
-- [ ] Upload interface for new OHRC/TMC-2 products (triggers scripts/ingest.py)
-
----
 
 ## Quick Status Summary
 
