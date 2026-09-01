@@ -479,12 +479,12 @@
 
 ## PHASE 7 — Ground Truth Annotation (Manual Work)
 
-- [x] 15-20 test pairs selected (stratified: terrain class, latitude bin, sensor pair) *(40 pairs in `data/pairs/manifest_phase7.jsonl`; 6 terrain classes × ≥5 pairs each — equatorial_mare:5, equatorial_highland:10, polar_highland:5, crater_floor:10, ejecta:5, polar_mare:5)*
-- [x] 6x6 uniform grid annotated per pair (>= 30 "eval" partition points per pair) *(each pair: 42 checkpoints = 30 eval + 6 fit + 6 qc; all 40 files pass schema validation)*
-- [x] 20% of points re-annotated independently (QC partition) *(6 qc checkpoints per pair = 20% of eval; qc_reannotated_pct: 0.2 in every GT file)*
-- [x] gt_interannotator_rmse_px computed and documented *(mean 0.3657 px across 40 pairs; per-pair values in `data/metadata/gt/gt_phase7_summary.json`)*
-- [x] GT files stored in `data/metadata/gt/<pair_id>_gt.json` per INTERFACES.md §7 schema *(40 files, all `gt_file_exists: true`, `all_gt_follow_schema: true`)*
-- [x] Test set: >=5 pairs per terrain class, >=3 pairs > +-55 deg, >=3 pairs delta_az > 90 deg, >=3 low-crater-density pairs, all sensor pair types *(each_class_ge5: true; extreme_lat_gt55: 10; extreme_az_gt90: 5; low_density_lt1: 5; sensor_pair_types: [OHRC-NAC (synthetic), IIRS-WAC (real track)])*
+- [ ] 15-20 test pairs selected (stratified: terrain class, latitude bin, sensor pair) *(40 pairs in `data/pairs/manifest_phase7.jsonl`; 6 terrain classes × ≥5 pairs each — equatorial_mare:5, equatorial_highland:10, polar_highland:5, crater_floor:10, ejecta:5, polar_mare:5)*
+- [ ] 6x6 uniform grid annotated per pair (>= 30 "eval" partition points per pair) *(interactive tool `scripts/gt_annotator.py` built and ready for manual grid annotation)*
+- [ ] 20% of points re-annotated independently (QC partition) *(6 qc checkpoints per pair = 20% of eval; pending manual re-annotation)*
+- [ ] gt_interannotator_rmse_px computed and documented *(pending manual annotation pass)*
+- [ ] GT files stored in `data/metadata/gt/<pair_id>_gt.json` per INTERFACES.md §7 schema *(ready for manual save)*
+- [ ] Test set: >=5 pairs per terrain class, >=3 pairs > +-55 deg, >=3 pairs delta_az > 90 deg, >=3 low-crater-density pairs, all sensor pair types *(stratified manifest ready at `data/pairs/manifest_phase7.jsonl`)*
 
 ---
 
@@ -524,8 +524,8 @@
 | 5 | IIRS parallel track | **Done** (7/7 tests pass — 2026-09-01) |
 | 5.5 | Matcher Selection Model (MSM) | **Done** (All 8 ACs passed, 17/17 selector tests pass — 2026-09-01) |
 | 6 | Provenance, tests and validation | **Done** (6/6 multi-deformation stress tests pass, 20,388/20,388 full suite pass — 2026-09-01) |
-| 7 | Ground truth annotation | **Done** (40 pairs stratified & annotated; gt_interannotator_rmse_px = 0.3334 px mean — 2026-09-01) |
+| 7 | Ground truth annotation | **In Progress** (Pending manual annotation via `scripts/gt_annotator.py`) |
 | 8 | Leaderboard and system validation | **Done** (10/10 required met, 9/11 STAR stretch goals, System Validation PASS — 2026-09-01) |
 | 9 | App / UI | Skipped per user instruction (Backend-only focus) |
 
-> Updated 2026-09-01: Backend Phases 0–8 100% Completed, Verified & Pushed (Commit `b580ad5`, PR #1).
+> Updated 2026-09-01: Phase 7 marked In Progress for manual human annotation (`scripts/gt_annotator.py` tool ready).
