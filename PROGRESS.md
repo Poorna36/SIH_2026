@@ -3,7 +3,7 @@
 > **How to use:** Check off `[ ]` to `[x]` as you complete each item.
 > Mark items you are currently working on with `[~]`.
 > Add your initials + date after ticking if helpful for traceability.
-> Reference docs: `docs/ARCHITECTURE.md`, `docs/PIPELINE.md`, `docs/IMPLEMENTATION_PLAN.md`, `docs/INTERFACES.md`, `docs/CONFIGURATION.md`, `docs/FEATURES.md`, `docs/VALIDATION.md`.
+> Reference docs: `docs/ARCHITECTURE.md`, `docs/PIPELINE.md`, `docs/IMPLEMENTATION_PLAN.md`, `docs/INTERFACES.md`, `docs/CONFIGURATION.md`, `docs/FEATURES.md`, `docs/VALIDATION.md`, `docs/SYNTHETIC_DATASET.md`, `docs/SYNTHETIC_BENCHMARK_ARCHITECTURE.md`.
 
 ---
 
@@ -477,6 +477,82 @@
 
 ---
 
+## PHASE 10 — Synthetic Ground-Truth Benchmark & Component-Wise Evaluation Track (v3.0)
+
+> **Status:** In Progress (Phase 1 smoke-test implementation; Phases 2–4 pending).
+> **Goal:** Establish a rigorous component-wise validation track using mathematically exact floating-point GT derived strictly from the physical orbital conditions of Chandrayaan-2 (OHRC / TMC-2 / IIRS) vs. LRO (NAC / WAC). Evaluates the entire pipeline at each discrete stage (L1.5 MSM → L2 Raw Matchers → L3 Spatial Filter → L4 Geometric Verification → L5 Sub-Pixel Refinement) against hidden GT, isolating exactly where the pipeline succeeds or fails.
+> **Architecture doc:** `docs/SYNTHETIC_BENCHMARK_ARCHITECTURE.md` (v3.0)
+> **Config:** `configs/synthetic_benchmark.yaml`
+
+### 10.1 — GT Anchor Extraction Engine (`src/synthetic/anchors.py`)
+- [~] `AnchorPoint` dataclass (id, src_x, src_y, feature_class, gradient_magnitude) implemented
+- [~] `AnchorSet` dataclass with `.save()`, `.load()`, `.as_numpy()` implemented
+- [~] `_extract_shi_tomasi_grid()` — Phase 1 baseline: Shi-Tomasi corners across uniform 8×8 grid cells
+- [~] `_deduplicate_anchors()` — greedy min-spacing pruning, sorted by gradient magnitude descending
+- [~] `extract_anchors()` entry point — validates min/max count, assigns sequential IDs
+- [ ] **Phase 2+ (stratified)**: morphological bucket detectors:
+  - [ ] `_extract_craters()` — crater rim/floor detection (HoughCircles or YOLOv9)
+  - [ ] `_extract_ridges()` — ridge/scarp detection (ridge filter + NMS)
+  - [ ] `_extract_maria()` — flat-textured maria regions
+  - [ ] `_extract_shadow_boundaries()` — solar terminator boundary detection
+  - [ ] `_extract_polar_terrain()` — high-incidence-angle polar regions
+
+### 10.2 — Physical Transformation Engine (`src/synthetic/transforms.py`)
+- [~] `TransformParams` dataclass (all geometric + photometric parameters, 3×3 matrix)
+- [~] `build_transform_matrix()` — exact 3×3 homogeneous M via cv2.getRotationMatrix2D
+- [~] `apply_transform()` — cv2.warpAffine with Lanczos/bicubic/bilinear
+- [~] `transform_gt_points()` — exact floating-point GT coordinate mapping via M @ homogeneous coords
+- [~] `apply_illumination_gamma()` — I_out = I_in^gamma (gamma ∈ [0.7, 1.4])
+- [~] `apply_mtf_blur()` — Gaussian sigma ∈ [0.5, 1.5] for sensor MTF simulation
+- [~] `apply_pushbroom_noise()` — per-column gain offsets for pushbroom vertical striping
+- [~] `apply_shadow_extension()` — directional morphological shadow extension in solar azimuth direction
+- [~] `generate_synthetic_pair()` — composite transform generator (6-step fixed order, all enabled transforms)
+- [x] Excluded transformations documented in code and config: perspective warp, JPEG, salt-pepper, color jitter
+
+### 10.3 — Synthetic Benchmark Generator & Manifest (`scripts/generate_synthetic_benchmark.py`)
+- [ ] CLI: `--config configs/synthetic_benchmark.yaml --images data/raw/ --out data/synthetic/ --phase 1`
+- [ ] Phase 1 smoke test: single exact sub-pixel translation, 5 GT anchors, seed=42
+- [ ] Phase 2: N=10 seeds/condition, geometric transforms (scale + rotation + translation)
+- [ ] Phase 3: N=30 seeds/condition, photometric transforms added
+- [ ] Phase 4: N=50 seeds/condition, all transforms, all 6 terrain strata
+- [ ] Generates `synthetic_manifest.jsonl` (synthetic pair record per INTERFACES.md §11)
+- [ ] Hidden GT files saved to `data/synthetic/gt/<pair_id>_gt.json` (NEVER loaded by matcher)
+- [ ] Manifests split by benchmark phase and terrain stratum
+
+### 10.4 — Component-Wise Evaluation Engine (`src/evaluation/synthetic_eval.py`)
+- [~] `GTAssignment` dataclass (gt_indices, pred_indices, distances, n_gt, n_pred, n_matched, n_fp, n_fn)
+- [~] `assign_gt_predictions()` — 1-to-1 Hungarian matching (scipy.optimize.linear_sum_assignment) + greedy fallback
+- [~] `score_l2_raw()` — GT Recall + Raw RMSE (before L3 filtering)
+- [~] `score_l3_survival()` — GT Survival Rate + FP Pruning Rate
+- [~] `score_l4_geometric()` — Inlier Precision, Inlier Recall, Pre-Refinement RMSE
+- [~] `score_l5_refinement()` — Refinement Gain, % Improved, % Degraded, % < 1px, % < 0.5px
+- [~] `score_l1_5_routing()` — MSM Routing Accuracy vs Oracle (no test data leakage enforced)
+- [~] `compute_oracle_best_matcher()` — composite oracle score: argmax(0.5*(1/RMSE_norm) + 0.25*inlier_ratio + 0.25*coverage)
+- [~] `aggregate_scorecards()` — N=50 seed aggregation, 95% CI (±1.96 SE or bootstrap)
+- [ ] `eval_synthetic` CLI runner — `scripts/eval_synthetic.py`
+
+### 10.5 — Benchmark Orchestration & Reporting (`scripts/run_synthetic_benchmark.py`)
+- [ ] CLI: `--config --phase --matchers --out-csv results/synthetic_benchmark/synthetic_component_report.csv`
+- [ ] End-to-end blind pipeline runner: generates pairs → runs L1–L6 without accessing GT → evaluates all stages
+- [ ] Per-condition aggregation with 95% confidence intervals
+- [ ] Outputs:
+  - [ ] `results/synthetic_benchmark/synthetic_component_report.csv` — per-stage scorecard (L1.5, L2, L3, L4, L5 × matcher × condition)
+  - [ ] `results/synthetic_benchmark/synthetic_benchmark_summary.md` — narrative summary with statistical tables
+
+### 10.6 — Unit & Regression Tests
+- [ ] T-SB01 — `transform_gt_points()` invertibility: applying M and M^-1 returns within 1e-9 px
+- [ ] T-SB02 — `extract_anchors()` grid coverage: at least one anchor per grid cell (8×8 = 64 cells)
+- [ ] T-SB03 — `extract_anchors()` minimum count gate: raises RuntimeError below min_count
+- [ ] T-SB04 — `assign_gt_predictions()` Hungarian: test with perfect predictions (all dist=0) → recall=1.0
+- [ ] T-SB05 — `assign_gt_predictions()` Hungarian: test with shifted predictions (all dist > max_dist_px) → recall=0.0
+- [ ] T-SB06 — `score_l5_refinement()` refinement gain: verify gain > 0 when refined_pts closer to GT
+- [ ] T-SB07 — `aggregate_scorecards()` CI: verify CI width decreases with N; CI includes true mean
+- [ ] T-SB08 — `generate_synthetic_pair()` photometric: output in [0, 1] range after all transforms
+- [ ] T-SB09 — `apply_illumination_gamma()`: verify gamma=1.0 returns identical image (identity)
+- [ ] T-SB10 — `compute_oracle_best_matcher()` oracle: verify matcher with RMSE=0 always wins
+
+---
+
 ## PHASE 7 — Ground Truth Annotation (Manual Work)
 
 - [ ] 15-20 test pairs selected (stratified: terrain class, latitude bin, sensor pair) *(40 pairs in `data/pairs/manifest_phase7.jsonl`; 6 terrain classes × ≥5 pairs each — equatorial_mare:5, equatorial_highland:10, polar_highland:5, crater_floor:10, ejecta:5, polar_mare:5)*
@@ -527,5 +603,7 @@
 | 7 | Ground truth annotation | **In Progress** (Pending manual annotation via `scripts/gt_annotator.py`) |
 | 8 | Leaderboard and system validation | **Done** (10/10 required met, 9/11 STAR stretch goals, System Validation PASS — 2026-09-01) |
 | 9 | App / UI | Skipped per user instruction (Backend-only focus) |
+| 10 | Synthetic GT Benchmark & Component-Wise Eval (v3.0) | **In Progress** (Phases 1 core modules implemented — 2026-09-02; Phases 2–4 pending) |
 
 > Updated 2026-09-01: Phase 7 marked In Progress for manual human annotation (`scripts/gt_annotator.py` tool ready).
+> Updated 2026-09-02: Phase 10 added — Synthetic Ground-Truth Benchmark Architecture v3.0. Core modules (`src/synthetic/`, `src/evaluation/synthetic_eval.py`, `configs/synthetic_benchmark.yaml`, `docs/SYNTHETIC_BENCHMARK_ARCHITECTURE.md`) implemented. Phases 2–4 and full orchestration scripts pending.

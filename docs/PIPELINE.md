@@ -458,3 +458,59 @@ All scripts (`ingest.py`, `build_pairs.py`, `preprocess.py`, `benchmark.py`, `re
 | 2 | Configuration error (missing config key, version mismatch, ISISDATA not set) |
 | 3 | Environment error (ASP version < 3.7.0, SPICE kernel fetch failed, GPU OOM unrecoverable) |
 | 4 | Leakage audit failed; no leaderboard output written |
+
+---
+
+## 9. Synthetic Benchmark Execution Flow (S-Track)
+
+The Synthetic Ground-Truth Benchmark runs as a **parallel validation track** — it uses real lunar source images but generates synthetic target images with exact known GT. The standard pipeline blindly processes image pairs without access to GT; the GT is only revealed to the Evaluation Engine at the end.
+
+Config: `configs/synthetic_benchmark.yaml`. Architecture: `docs/SYNTHETIC_BENCHMARK_ARCHITECTURE.md`.
+
+### S-Track Flow
+
+```
+Real Lunar Source Image (e.g., NAC strip or OHRC crop)
+      |
+      | S-T1  Anchor Extraction      src/synthetic/anchors.py
+      v
+GT Anchors (hidden -- never passed to matcher)     data/synthetic/gt/<pair_id>_gt.json
+      |
+      | S-T2  Physical Transform     src/synthetic/transforms.py
+      v
+Synthetic Target Image + Transform Matrix M        data/synthetic/<pair_id>_synth.tif
+      |
+      | (Images ONLY passed below; GT is hidden)
+      |
+      | S-T3  Blind Pipeline Run     scripts/benchmark.py + scripts/run_s6_s7.py
+      |        (S3 Preprocess -> S4 Match -> S5 Select -> S6 Verify -> S7 Refine)
+      v
+Stage Outputs per matcher: matches_raw, matches_selected, geometry.json, matches_refined
+      |
+      | S-T4  Component-Wise Evaluation  src/evaluation/synthetic_eval.py
+      |        GT loaded here ONLY; Hungarian 1-to-1 assignment (tau = 2.0 px)
+      v
+Per-stage scorecards: L1.5 / L2 / L3 / L4 / L5 StageScorecard objects
+      |
+      | S-T5  Stratified Reporting   scripts/run_synthetic_benchmark.py
+      |        N=50 seeds/condition -> 95% CI aggregation
+      v
+results/synthetic_benchmark/synthetic_component_report.csv
+results/synthetic_benchmark/synthetic_benchmark_summary.md
+```
+
+### S-Track Stage Table
+
+| S-Track Stage | Script/Module | Reads | Writes | Key Contract |
+|---|---|---|---|---|
+| S-T1 Anchor Extraction | `src/synthetic/anchors.py` | real source image | `gt/<pair_id>_gt.json` | Min 60 anchors; uniform grid spread |
+| S-T2 Transform | `src/synthetic/transforms.py` | source image + config | synthetic target + `synthetic_manifest.jsonl` | Exact floating-point M matrix; GT never in manifest |
+| S-T3 Blind Pipeline | `scripts/benchmark.py` etc. | synthetic pair images | stage artifacts per matcher | GT is NOT loaded -- pipeline is fully blind |
+| S-T4 Evaluation | `src/evaluation/synthetic_eval.py` | stage artifacts + GT | `StageScorecard` per stage | Hungarian assignment; oracle computed a posteriori |
+| S-T5 Reporting | `scripts/run_synthetic_benchmark.py` | all scorecards | CSV + Markdown summary | N=50 seeds; 95% CI on all metrics |
+
+### Critical Constraints
+- GT files (`data/synthetic/gt/`) MUST NOT be loaded by any matcher or preprocessing script.
+- GT assignment radius: `max_dist_px = 2.0` (from config). Do not change without re-running all benchmarks.
+- Oracle best-matcher computation uses ONLY GT metrics from S-T4 output. MSM model MUST NOT see these during inference (no leakage).
+- Phase 4 reporting requires N=50 independent seeds per condition block. Single-seed results are insufficient for statistical claims.

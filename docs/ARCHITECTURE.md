@@ -24,7 +24,7 @@ Produce a generic software system that finds **spatially well-distributed, sub-p
 ---
 ## 1. System Overview
 
-The system is a **benchmark-first, pluggable matcher architecture** enhanced with an intelligent **Matcher Selection Model (MSM)** for production acceleration. Six major concerns are handled by dedicated components:
+The system is a **benchmark-first, pluggable matcher architecture** enhanced with an intelligent **Matcher Selection Model (MSM)** for production acceleration, and a dedicated **Synthetic Ground-Truth Benchmark** for component-wise validation. Eight major concerns are handled by dedicated components:
 
 | Concern | Component |
 |---|---|
@@ -35,6 +35,7 @@ The system is a **benchmark-first, pluggable matcher architecture** enhanced wit
 | Spatial uniformity enforcement | L3 — Uniform Correspondence Optimization |
 | Geometric verification and sub-pixel accuracy | L4 + L5 |
 | Products and evaluation | L6 + L7 |
+| Component-wise validation with exact GT | Synthetic Ground-Truth Benchmark (v3.0) |
 
 No component is included merely because it is modern or popular. Each solves a specific documented problem.
 
@@ -356,28 +357,34 @@ SIH/
 |-- IMPLEMENTATION_PLAN.md
 |-- DECISIONS.md
 |-- CHANGES.md
+|-- SYNTHETIC_DATASET.md
+|-- SYNTHETIC_BENCHMARK_ARCHITECTURE.md  # v3.0 — component-wise validation track
 |-- configs/
 |   |-- ohrc_nac.yaml
 |   |-- tmc_wac.yaml
 |   |-- iirs_wac.yaml
 |   |-- matchers.yaml
-|   +-- msm.yaml        # MSM model thresholds, hard gates & fallback configs
+|   |-- msm.yaml        # MSM model thresholds, hard gates & fallback configs
+|   +-- synthetic_benchmark.yaml  # Synthetic GT Benchmark v3.0 configuration
 |-- data/
 |   |-- raw/            # ISRO zips, original filenames REQUIRED
 |   |-- calibrated/     # ISIS .cub after isisimport/spiceinit
 |   |-- reference/      # NAC strips, WAC mosaic + crops
 |   |-- pairs/          # manifest.jsonl, skipped.jsonl
+|   |-- synthetic/      # generated synthetic image pairs + hidden GT
+|   |   |-- synthetic_manifest.jsonl
+|   |   +-- gt/         # <pair_id>_gt.json (NEVER loaded by matcher)
 |   +-- metadata/       # parsed labels, SPICE/kernel logs, gt/
 |-- models/             # Trained MSM models (msm_v1.pkl, msm_v1_stats.json)
 |-- src/
 |   |-- ingest/
 |   |-- preprocessing/
 |   |-- selector/       # MSM Feature extraction & LightGBM inference
-|   |   |-- features.py # 13-feature vector extractor
-|   |   +-- model.py    # MatcherSelector class & routing logic
+|   |   |-- features.py
+|   |   +-- model.py
 |   |-- geometry/
 |   |-- matching/
-|   |   |-- base.py     # Matcher interface (ABC)
+|   |   |-- base.py
 |   |   |-- sift.py
 |   |   |-- rift.py
 |   |   |-- lightglue.py
@@ -385,16 +392,27 @@ SIH/
 |   |-- selection/      # anms.py (SSC), spatial.py (grid+coverage)
 |   |-- registration/   # DEGENSAC/MAGSAC, model ladder, declustering
 |   |-- refinement/     # NCC/phase-corr, paraboloid peak fit
+|   |-- synthetic/      # Synthetic benchmark: anchor extraction + transform engine
+|   |   |-- __init__.py
+|   |   |-- anchors.py  # GT anchor extraction (Shi-Tomasi + morphological)
+|   |   +-- transforms.py  # Physical transform engine (GSD, shift, gamma, MTF)
 |   +-- evaluation/     # metrics, leaderboard, leakage audit, msm_eval.py
+|       +-- synthetic_eval.py  # Component-wise scorecard engine (L1.5–L5)
 |-- scripts/
 |   |-- ingest.py
 |   |-- build_pairs.py
 |   |-- preprocess.py
-|   |-- benchmark.py    # S4+S5 (+ optional MSM selector routing)
-|   |-- train_msm.py    # Geo-cell disjoint MSM LightGBM trainer
-|   +-- register.py
+|   |-- benchmark.py
+|   |-- train_msm.py
+|   |-- register.py
+|   |-- generate_synthetic_benchmark.py  # Synthetic pair generator (Phase 1–4)
+|   |-- eval_synthetic.py                # Blind evaluation runner
+|   +-- run_synthetic_benchmark.py       # Full orchestration + statistical reporting
 |-- results/
-|   +-- arbitration.log
+|   |-- arbitration.log
+|   +-- synthetic_benchmark/   # Component-wise scorecard outputs
+|       |-- synthetic_component_report.csv
+|       +-- synthetic_benchmark_summary.md
 +-- app/                # UI only after pipeline is reliable
 ```
 
@@ -424,7 +442,48 @@ SIH/
 
 ---
 
-## 8. Limitations
+## 9. Synthetic Ground-Truth Benchmark (v3.0)
+
+A dedicated **Component-Wise Validation Track** that evaluates the entire pipeline at each discrete stage against hidden mathematical ground truth. See [`docs/SYNTHETIC_BENCHMARK_ARCHITECTURE.md`](SYNTHETIC_BENCHMARK_ARCHITECTURE.md) for full specification.
+
+### 9.1 Objective
+Isolate exactly where the pipeline succeeds or fails — from matcher selection (L1.5) down to sub-pixel refinement (L5) — using exact floating-point GT derived from physical orbital-sensor conditions, not generic CV augmentations.
+
+### 9.2 Transformation Constraints (Problem-Statement Driven)
+All transformations simulate the specific orbital mapping conditions of Chandrayaan-2 and LRO:
+- **Scale-Invariance**: Lanczos resampling at exact sensor GSD ratios (OHRC 0.25 m → NAC 0.5 m = 2.0×, etc.)
+- **Sub-Pixel Translation & Rotation**: Non-integer shifts ±1.0 px, orbital yaw/pitch ±5°.
+- **Sun-Angle Invariance**: Phase-angle gamma simulation (γ ∈ [0.7, 1.4]), directional shadow extension.
+- **Cross-Sensor MTF Simulation**: Sensor-specific Gaussian blur σ ∈ [0.5, 1.5], pushbroom column noise.
+- **Excluded**: Perspective warping, JPEG compression, salt-and-pepper noise, color jitter.
+
+### 9.3 Component-Wise Scorecards (L1.5 → L5)
+| Stage | Key Metrics |
+|---|---|
+| **L1.5 MSM** | Routing Accuracy vs. Oracle (composite: 0.5×RMSE⁻¹ + 0.25×inlier_ratio + 0.25×coverage) |
+| **L2 Raw Matchers** | GT Recall (capacity), Raw RMSE |
+| **L3 Spatial Filter** | GT Survival Rate, FP Pruning Rate |
+| **L4 Geometric Verification** | Inlier Precision, Inlier Recall, Pre-Refinement RMSE |
+| **L5 Sub-Pixel Refinement** | Refinement Gain (px), % Improved, % Degraded, % < 0.5 px |
+
+### 9.4 Key Design Decisions
+- **Hidden GT**: Anchor points are NEVER passed to the matcher. Only the Evaluation Engine loads them.
+- **1-to-1 Hungarian Assignment**: Predictions matched to GT using `scipy.optimize.linear_sum_assignment` with radius τ = 2.0 px. Unmatched predictions are False Positives.
+- **Statistical Rigour**: N=50 independent random seeds per condition. All metrics reported with 95% confidence intervals (±1.96 SE).
+- **Leakage Guard**: Oracle best-matcher label is computed strictly a posteriori. MSM inference MUST NOT access GT metrics.
+
+### 9.5 New Files
+| File | Purpose |
+|---|---|
+| `docs/SYNTHETIC_BENCHMARK_ARCHITECTURE.md` | Full specification (v3.0) |
+| `configs/synthetic_benchmark.yaml` | All tunable parameters |
+| `src/synthetic/anchors.py` | GT anchor extraction |
+| `src/synthetic/transforms.py` | Physical transformation engine |
+| `src/evaluation/synthetic_eval.py` | Component-wise scorecard engine |
+
+---
+
+## 10. Limitations
 
 1. RIFT M1 has one documented total failure — benchmark decides its role
 2. LightGlue/SuperPoint trained on MegaDepth (Earth imagery) — domain gap is a measured risk; F2 checks + M0 fallback mitigate it
