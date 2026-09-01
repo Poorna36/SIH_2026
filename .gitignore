@@ -39,3 +39,17 @@ BEST_ARCHITECTURE_KNOWN.md
 Thumbs.db
 .vscode/
 .idea/
+
+# Environment files
+.env
+.env.*
+*.env
+*.env.local
+.env.production
+.env.development
+
+# Node / Frontend build artifacts
+node_modules/
+dist/
+dist-ssr/
+
