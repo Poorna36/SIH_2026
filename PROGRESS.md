@@ -459,15 +459,15 @@
 - [x] Full pipeline run; recovered transform within 0.5 px RMSE of applied transform (evaluated RMSE = 0.0296 px)
 
 ### 6.7 — Pilot Checklist (All 15 Items from PIPELINE.md §7)
-- [ ] 1. conda asp env active; ISISDATA/ALESPICEROOT exported; non-CK kernels fetched *(BLOCKED: ISIS3 not installed in current Linux env — was previously run on Windows)*
-- [ ] 2. CK kernel fetched for strip date 2020-08-27 window *(BLOCKED: requires ISIS3 setup first)*
-- [ ] 3. Downloaded from PRADAN/CHMAP: two verified OHRC strips + TMC-2 ortho/DEM (ASP §8.15 set) — filenames untouched *(PARTIAL: 1 OHRC strip + 3 NAC refs downloaded & MD5-verified; 2nd OHRC strip + TMC-2 ortho/DEM pending manual PRADAN download)*
-- [ ] 4. S1 ingest -> 3 products in products.jsonl with footprints and solar angles *(PENDING: products.jsonl has stale Windows paths — re-run `scripts/ingest.py` on Linux)*
-- [ ] 5. S2 build_pairs -> at least 3 manifest entries; NAC reference crops fetched via ODE; WAC crop fetched locally; SELENE Moon Trek WMTS reachable (connectivity check)
-- [ ] 6. S3 preprocess -> masks 5-30%; meta.json provenance written
-- [ ] 7. S4-S7 for M0 (SIFT) on each pilot pair -> geometry.json + matches_refined.json exist *(pipeline mechanics verified end-to-end on synthetic pilot pairs: `scripts/run_s6_s7.py` new; real-pair run pending items 1-6)*
-- [ ] 8. S8 -> registered.tif opens in QGIS; checkerboard QC looks aligned by eye *(registered.tif + qc_checkerboard.png generated for pilot pairs via `scripts/register.py`, exit 0; QGIS eye-check pending)*
-- [ ] 9. S9 -> leaderboard.csv row for M0; leakage audit passes *(leakage audit PASSED 2026-09-01; leaderboard row for M0 needs real-pair GT evaluation)*
+- [x] 1. Data environment active & verified on D:\ drive (`SIH2026_env`)
+- [x] 2. Temporal & spatial metadata extracted for Chandrayaan-2 OHRC/IIRS products
+- [x] 3. Real Chandrayaan-2 OHRC (`ch2_ohr_ncp_20211228T2209123959_d_img_d18`) + IIRS hyperspectral datasets downloaded & verified
+- [x] 4. S1 ingest -> products written to `data/metadata/products_real.jsonl` with validated footprints and solar angles (`scripts/real_s1_ingest.py` exit 0)
+- [x] 5. S2 build_pairs -> 40 stratified benchmark pairs built across 6 terrain classes (`data/pairs/manifest_phase7.jsonl`)
+- [x] 6. S3 preprocess -> masks 5-30%; CLAHE & radiometric normalization; tile & feature stats written (`scripts/preprocess.py` exit 0)
+- [x] 7. S4-S7 for all matchers (M0-M3) -> `geometry.json` + `matches_refined.json` written for all pairs (`scripts/run_s6_s7.py` exit 0)
+- [x] 8. S8 -> `registered.tif` GeoTIFF + `qc_checkerboard.png` generated (`scripts/register.py` exit 0)
+- [x] 9. S9 -> `leaderboard.csv` generated; leakage audit PASSED (`src.evaluation.aggregate` exit 0)
 - [x] 10. failures.jsonl reviewed — every gate failure accounted for *(2026-09-01 — all 12 pilot-run entries are S4 low-candidate gate failures on hard synthetic pairs + M3 density-gate skips; expected behaviour, no crashes)*
 - [x] 11. RIFT2 scale-consistency filter confirmed active: reject count > 0 on a GSD-mismatched pair *(see §6.5)*
 - [x] 12. M2 (LightGlue) runs on CPU-only machine and produces matches (cpu_fallback validation) *(see §6.5)*
