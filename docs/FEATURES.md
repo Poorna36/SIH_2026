@@ -340,3 +340,47 @@ This check is a lunar-specific safety measure for crater-field repetitive textur
 - Given a pair_id and a code commit, all intermediate outputs are reproducible from the original raw files
 - No artifact is overwritten without --force flag and explicit user confirmation
 - Leakage audit can reconstruct the train/test split from manifest.jsonl alone
+
+---
+
+## F26 — Matcher Selection Model (MSM) & Feature Vector (L1.5)
+
+**Component:** L1.5 / src/selector/features.py, src/selector/model.py
+**Description:** Predict optimal matcher pipeline using a lightweight LightGBM multi-class model on a 13-dimensional scene feature vector extracted from PairRecord and L1 metadata. Employs dual-threshold confidence routing ($\tau_{high}=0.65, \tau_{low}=0.40$), rule-based safety gating, and graceful escalation.
+**Feature Vector Definition (13 features):**
+1. `sensor_pair_enc` (int): 0=OHRC-NAC, 1=TMC-WAC, 2=IIRS-WAC
+2. `gsd_ratio` (float): GSD ratio source/ref $\in (0, 1.0]$
+3. `latitude_abs` (float): Bounding box centroid absolute latitude $[0.0^\circ, 90.0^\circ]$
+4. `delta_solar_azimuth` (float): Clamped azimuth difference $[0.0^\circ, 180.0^\circ]$
+5. `terrain_class_enc` (int): 0=highland, 1=maria, 2=polar, 3=mixed
+6. `crater_density` (float): Log-transformed crater density $\log(1 + \text{craters/Mpx})$
+7. `masked_fraction` (float): Fraction of image masked by shadow/validity mask $[0.0, 1.0]$
+8. `overlap_fraction` (float): Spatial overlap fraction $(0.0, 1.0]$
+9. `src_texture_contrast` (float): Mean local std in $8\times 8$ windows (source)
+10. `ref_texture_contrast` (float): Mean local std in $8\times 8$ windows (reference)
+11. `src_mean_gradient` (float): Mean Sobel gradient magnitude (source)
+12. `ref_mean_gradient` (float): Mean Sobel gradient magnitude (reference)
+13. `tile_count` (int): Active non-discarded tile count post-reconciliation
+
+**Acceptance criteria:**
+- Feature extraction completes in $< 100\text{ ms}$ per pair
+- MD5 feature vector hash generated and logged in `selector.json`
+- Hard gates strictly enforced (M3 suppressed if crater density $< \tau_c$; M2 CPU fallback if no GPU)
+- Dual-threshold routing correctly dispatches single matcher ($\ge 0.65$), dual matchers ($[0.40, 0.65)$), or all matchers ($< 0.40$)
+
+---
+
+## F27 — Geo-Cell Disjoint MSM Training and Acceptance Evaluation
+
+**Component:** L1.5 + L7 / scripts/train_msm.py, src/evaluation/msm_eval.py
+**Description:** Train LightGBM multi-class model on ground-truth oracle best matcher labels from train split using strictly disjoint $10^\circ \times 10^\circ$ geographic cell cross-validation (F15). Validate that selector passes 8 Acceptance Criteria (AC1–AC8) before production activation.
+**Acceptance criteria (AC1–AC8):**
+1. **AC1 Selector Accuracy:** $\ge 70.0\%$ match with oracle best matcher on test split
+2. **AC2 Top-2 Accuracy:** $\ge 85.0\%$ oracle best matcher included in top 2 choices
+3. **AC3 Mean RMSE Degradation:** $\le +0.10\text{ px}$ vs oracle best matcher
+4. **AC4 Max Single-Pair RMSE Degradation:** $\le +0.50\text{ px}$ across all test pairs
+5. **AC5 Runtime Reduction:** $\ge 50.0\%$ reduction in total correspondence search runtime
+6. **AC6 Fallback Rate:** $\le 20.0\%$ escalation to full safe mode
+7. **AC7 Feature Importance:** Top 5 features have non-zero split/gain importance
+8. **AC8 Leakage Audit:** Zero geo-cell overlap verified by `leakage_audit --check-msm`
+

@@ -379,6 +379,88 @@ Entry point. Reads geometry.json + matches_refined.json, warps source onto refer
 
 ---
 
+## Phase 5.5 — Matcher Selection Model (MSM) (F26–F27)
+
+### P5.5.0 — Prerequisite Checks
+- Verify $\ge 50$ benchmarked pairs exist across diverse strata in `results/pair_results/`.
+- Verify `results/leaderboard.csv` contains ground-truth oracle best matcher labels on the train split.
+
+### P5.5.1 — Preprocessing Feature Augmentation (`src/preprocessing/`, `scripts/preprocess.py`)
+- Augment `meta.json` output with:
+  - `src_texture_contrast` / `ref_texture_contrast`: local standard deviation in $8\times 8$ sliding windows.
+  - `src_mean_gradient` / `ref_mean_gradient`: mean Sobel gradient magnitude.
+  - `tile_count`: count of active non-discarded tiles post-reconciliation.
+
+### P5.5.2 — Feature Extraction Module (`src/selector/features.py`)
+```python
+@dataclass
+class MSMFeatureVector:
+    pair_id: str
+    sensor_pair_enc: int
+    gsd_ratio: float
+    latitude_abs: float
+    delta_solar_azimuth: float
+    terrain_class_enc: int
+    crater_density: float
+    masked_fraction: float
+    overlap_fraction: float
+    src_texture_contrast: float
+    ref_texture_contrast: float
+    src_mean_gradient: float
+    ref_mean_gradient: float
+    tile_count: int
+    feature_vector_hash: str
+
+def extract_features(pair_record: dict, meta_json: dict) -> MSMFeatureVector: ...
+def vectorize_features(features: MSMFeatureVector) -> np.ndarray: ...
+```
+
+### P5.5.3 — Configuration & Schema (`configs/msm.yaml`)
+Create `configs/msm.yaml` with parameters for `tau_high=0.65`, `tau_low=0.40`, hard gating rules, and safe mode fallbacks.
+
+### P5.5.4 — Matcher Selection Engine (`src/selector/model.py`)
+```python
+@dataclass
+class SelectorResult:
+    pair_id: str
+    selected_matcher: str
+    confidence: float
+    fallback_matcher: str
+    all_probs: dict
+    routing_reason: str
+    matchers_to_run: list[str]
+    hard_rules_applied: list[str]
+    selector_version: str
+    feature_vector_hash: str
+
+class MatcherSelector:
+    def __init__(self, config: dict): ...
+    def load_model(self, model_path: str): ...
+    def predict(self, features: MSMFeatureVector) -> SelectorResult: ...
+```
+
+### P5.5.5 — Pipeline Integration (`scripts/benchmark.py`)
+- Integrate `--mode msm` and `--msm-config configs/msm.yaml` into benchmark execution loop.
+- Dispatch only `SelectorResult.matchers_to_run`.
+- Catch S4 candidate gate failures and dynamically escalate to `fallback_matcher` or M0 baseline.
+
+### P5.5.6 — MSM Training Script (`scripts/train_msm.py`)
+- Extract training feature vectors and oracle best-matcher labels from train split.
+- Run `GroupKFold` cross-validation grouped by `geo_cell` (F15).
+- Fit `lightgbm.LGBMClassifier(objective='multiclass', num_class=4, metric='multi_logloss')`.
+- Export `models/msm_v1.pkl` and `models/msm_v1_stats.json`.
+
+### P5.5.7 — MSM Evaluation Module (`src/evaluation/msm_eval.py`)
+- Evaluate predictions on test split against all 8 Acceptance Criteria (AC1–AC8).
+- Output `results/msm_benchmark_report.json`.
+
+### P5.5.8 — Validation & Activation Gate
+- Verify exit code 0 from `python -m src.evaluation.leakage_audit --manifest data/pairs/manifest.jsonl --check-msm`.
+- If all AC1–AC8 pass, enable `msm.enabled: true` in `configs/msm.yaml`.
+
+---
+
+
 ## Implementation Constraints
 
 **Coordinate convention:** ALWAYS use (col, row) = (x, y) for pixel coordinates. Add an assertion at the top of every function that touches coordinates:

@@ -68,12 +68,14 @@ class ArbitrationEntry:
         crater_density_per_km2: Optional[float],
         detector_validated: bool,
         created_at: str,
+        msm_routing: Optional[Dict[str, Any]] = None,
     ):
         self.__dict__.update(locals())
         del self.__dict__["self"]
 
     def to_dict(self) -> dict:
         return {k: v for k, v in self.__dict__.items()}
+
 
 
 # ---------------------------------------------------------------------------
@@ -92,7 +94,9 @@ def arbitrate_pair(
     matcher_results: Dict[str, dict],
     pair_record: dict,
     gt_interannotator_rmse_px: float = DEFAULT_GT_INTERANN_RMSE,
+    msm_routing: Optional[Dict[str, Any]] = None,
 ) -> ArbitrationEntry:
+
     """
     Determine the winning matcher for one pair.
 
@@ -264,7 +268,9 @@ def arbitrate_pair(
         crater_density_per_km2=crater_density,
         detector_validated=m3_res.get("detector_validated", False),
         created_at=datetime.now(timezone.utc).isoformat(),
+        msm_routing=msm_routing,
     )
+
 
 
 # ---------------------------------------------------------------------------

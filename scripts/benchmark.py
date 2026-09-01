@@ -440,15 +440,17 @@ def _parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
                    help="Output root directory")
     p.add_argument(
         "--mode",
-        choices=["benchmark", "production"],
+        choices=["benchmark", "production", "msm"],
         default="benchmark",
         help=(
             "benchmark: run ALL matchers from registry (M0 always-on baseline + M1/M2/M3). "
-            "production: apply arbitration policy — run only the policy-selected matcher "
-            "per pair (M3 if gate passes → M2 → M1 polar flag → M0 fallback). "
+            "production: apply heuristic arbitration policy. "
+            "msm: apply Matcher Selection Model (L1.5/S4.5) to route optimal matcher pipeline. "
             "Default: benchmark."
         ),
     )
+    p.add_argument("--msm-config", default=None,
+                   help="Path to msm.yaml config (used when --mode msm)")
     p.add_argument("--splits", nargs="*", default=["train"],
                    help="Which manifest splits to process (train/test)")
     p.add_argument("--parallel", type=int, default=1,
@@ -459,6 +461,7 @@ def _parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
                    help="Re-run even if outputs exist")
     p.add_argument("-v", "--verbose", action="store_true")
     return p.parse_args(argv)
+
 
 
 def main(argv: Optional[List[str]] = None) -> int:
@@ -520,15 +523,58 @@ def main(argv: Optional[List[str]] = None) -> int:
     out_root = Path(args.out)
     out_root.mkdir(parents=True, exist_ok=True)
 
+    # ── Matcher Selection Model (MSM) initialization if requested ─────────────
+    selector = None
+    if args.mode == "msm":
+        try:
+            from src.selector import MatcherSelector, extract_features
+            msm_config_source = args.msm_config if args.msm_config else cfg
+            selector = MatcherSelector(config=msm_config_source)
+            log.info("MSM MatcherSelector initialized (version: %s)", selector.model_version)
+        except Exception as exc:
+            log.warning("Failed to initialize MatcherSelector: %s. Falling back to benchmark mode.", exc)
+            args.mode = "benchmark"
+
     # ── Determine which matchers to run based on mode ─────────────────────────
     def _matchers_for_pair(pair: dict) -> Dict[str, Any]:
         """
         benchmark mode: all registered matchers (M0 always-on).
         production mode: apply arbitration policy to select one matcher per pair.
             Policy: M3 (if crater gate + detector_validated) → M2 → M1 (polar flag) → M0
+        msm mode: evaluate MSM feature vector and route predicted matcher(s).
         """
         if args.mode == "benchmark":
             return registry
+
+        if args.mode == "msm" and selector is not None:
+            pair_id = pair.get("pair_id", "unknown")
+            meta_path = Path("data/processed") / pair_id / "meta.json"
+            meta_json = {}
+            if meta_path.exists():
+                try:
+                    with open(meta_path, "r", encoding="utf-8") as fh:
+                        meta_json = json.load(fh)
+                except Exception as exc:
+                    log.warning("[%s] Failed to load meta.json for MSM: %s", pair_id, exc)
+
+            features = extract_features(pair, meta_json)
+            sel_result = selector.predict(features)
+            selector.save_result(sel_result, out_root / pair_id / "selector.json")
+
+            log.info(
+                "  [MSM] %s -> selected=%s (conf=%.2f), fallback=%s, matchers=%s, reason=%s",
+                pair_id, sel_result.selected_matcher, sel_result.confidence,
+                sel_result.fallback_matcher, sel_result.matchers_to_run, sel_result.routing_reason,
+            )
+
+            ordered_msm: Dict[str, Any] = {}
+            for mid in sel_result.matchers_to_run:
+                if mid in registry:
+                    ordered_msm[mid] = registry[mid]
+            # Ensure at least SIFT fallback if none found
+            if not ordered_msm and "sift" in registry:
+                ordered_msm["sift"] = registry["sift"]
+            return ordered_msm
 
         # production / arbitration policy
         ordered: Dict[str, Any] = {}
@@ -578,7 +624,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         log.info("Pair: %s", pair_id)
 
         active_matchers = _matchers_for_pair(pair)
-        for mid, matcher in active_matchers.items():
+        pair_succeeded = False
+
+        for mid, matcher in list(active_matchers.items()):
             result_summary = _run_pair_matcher(
                 pair, matcher, out_root, cfg,
                 resume=args.resume, force=args.force, verbose=args.verbose,
@@ -586,19 +634,34 @@ def main(argv: Optional[List[str]] = None) -> int:
             status = result_summary.get("status", "")
             if status == "ok":
                 n_ok += 1
+                pair_succeeded = True
             elif status == "skipped_checkpoint":
                 n_skip += 1
+                pair_succeeded = True
             else:
                 n_fail += 1
 
-            # In production mode, stop after first successful matcher
-            if args.mode == "production" and status == "ok":
-                log.info("  [production] %s succeeded — skipping remaining matchers", mid)
+            # In production or MSM mode, stop after first successful matcher
+            if (args.mode in ("production", "msm")) and pair_succeeded:
+                log.info("  [%s] %s succeeded — stopping pair pipeline", args.mode, mid)
                 break
+
+        # In MSM mode: on S4/S5 failure of routed matcher(s), escalate to baseline M0 (SIFT)
+        if args.mode == "msm" and not pair_succeeded and "sift" in registry and "sift" not in active_matchers:
+            log.warning("  [MSM ESCALATION] Routed matcher(s) failed — escalating to M0 (SIFT)")
+            result_summary = _run_pair_matcher(
+                pair, registry["sift"], out_root, cfg,
+                resume=args.resume, force=args.force, verbose=args.verbose,
+            )
+            if result_summary.get("status") in ("ok", "skipped_checkpoint"):
+                n_ok += 1
+            else:
+                n_fail += 1
 
     log.info("Done — ok=%d fail=%d skip=%d", n_ok, n_fail, n_skip)
 
     return 1 if n_fail > 0 else 0
+
 
 
 if __name__ == "__main__":

@@ -409,6 +409,38 @@ iirs:
 
 ---
 
+## 11. Matcher Selection Model (configs/msm.yaml)
+
+```yaml
+# configs/msm.yaml
+msm:
+  enabled: false                      # Toggle for production mode (false = benchmark mode)
+  model_path: "models/msm_v1.pkl"
+  model_stats_path: "models/msm_v1_stats.json"
+  model_version: "msm_v1"
+
+  tau_high: 0.65                      # Single matcher execution threshold (P_max >= 0.65)
+  tau_low: 0.40                       # Fallback matcher threshold (0.40 <= P_max < 0.65)
+
+  hard_rules:
+    crater_density_gate:
+      enabled: true
+      tau_c: 5.0                      # Craters / Mpx threshold
+    gpu_gate:
+      enabled: true
+      check_at_startup: true
+    iirs_track_gate:
+      enabled: true
+
+  fallback:
+    on_model_load_error: "benchmark_mode"
+    on_feature_extraction_error: "benchmark_mode"
+    on_s4_gate_failure: "sift"
+    log_all_fallback_events: true
+```
+
+---
+
 ## Notes on (TUNE) Parameters
 
 The following parameters were set from literature and need empirical validation on actual lunar data:

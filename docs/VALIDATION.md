@@ -18,6 +18,7 @@ How to verify the system is correct. This document defines what "it works" means
 | Uniform coverage | grid_density_std <= 4.0; coverage >= 0.60 on all matchers |
 | Sub-pixel refinement | refinement_gain >= 0.10 px on >= 60% of pairs (L5 is doing real work) |
 | IIRS module | RMSE < 80 m absolute on IIRS pairs vs WAC reference |
+| Matcher Selection Model (MSM) | Passes all 8 Acceptance Criteria (AC1–AC8; accuracy $\ge 70\%$, runtime cut $\ge 50\%$) |
 | Leakage | No geo_cell overlaps between train and test splits |
 
 ---
@@ -132,6 +133,8 @@ The implemented system passes validation if, on the test split:
 | M0 failure rate (no output) | <= 30% of pairs | <= 15% |
 | IIRS RMSE (absolute) | < 80 m | < 40 m |
 | Leakage audit | must pass | must pass |
+| MSM Accuracy (AC1) | >= 70.0% | >= 85.0% |
+| MSM Runtime Reduction (AC5) | >= 50.0% | >= 65.0% |
 | Polar stratum included in report | mandatory | mandatory |
 | TMC-2–WAC (separate, non-gating) | reported separately; shortfall does NOT fail overall system | RMSE < 1.5 px |
 | gt_interannotator_rmse_px | must be computed and reported alongside every RMSE claim | < 0.3 px |
@@ -143,7 +146,7 @@ Note on TMC-2–WAC row: this sensor pair is confirmed unvalidated by any paper 
 ## 6. Leakage Audit Protocol
 
 ```bash
-python -m src.evaluation.leakage_audit --manifest data/pairs/manifest.jsonl
+python -m src.evaluation.leakage_audit --manifest data/pairs/manifest.jsonl --check-msm
 ```
 
 Checks:
@@ -151,6 +154,7 @@ Checks:
 - No pair's geo_cell appears in both splits (the geo_cell is the split unit, not the pair)
 - Any gt_path present in manifest must correspond to a pair in the test split
 - The leaderboard.csv split column matches manifest.jsonl split for all pair_ids
+- When `--check-msm` is set: verifies MSM training feature set contains zero geo-cells present in test split
 
 The leakage audit must pass before any leaderboard number is published or quoted.
 
@@ -176,10 +180,15 @@ For catching regressions during implementation. Every test has an ID for CI refe
 | T10 | L4 | Model ladder selects homography over affine | Homography chosen when affine RMSE > 1.0 px; warp residual at corners < 0.05 px on synthetic test |
 | T11 | L5 | Refinement gain on a synthetic controlled shift | Take one real image; apply known shift of (3.7, 2.3) px; run L5; recovered shift within 0.1 px of ground truth; sharpness > tau_q |
 | T12 | L7 | RMSE computation reads only "eval" partition | Inserting a "fit" partition point does not change reported RMSE |
+| T13 | L1.5 | MSM Feature Extraction Determinism | Extracting features twice on identical PairRecord + meta.json yields exact same feature vector and MD5 hash |
+| T14 | L1.5 | MSM Rule-Based Gating Override | If crater_density < tau_c, P(M3) is clamped to 0.0; if GPU unavailable, M2 routes to CPU fallback |
+| T15 | L1.5 | Dual-Threshold Routing Logic | Tests $P_{max} \ge 0.65 \to [M_{best}]$, $0.40 \le P < 0.65 \to [M_{best}, M_{second}]$, $P < 0.40 \to [M_0, M_1, M_2, M_3]$ |
+| T16 | L1.5 | Geo-Cell Disjoint MSM Cross-Validation | GroupKFold CV on train split confirms zero geo-cell overlap between train and validation folds |
 
 ### Integration Tests
 - Full pipeline on 3 pilot pairs, all matchers: no crashes and all artifacts written
 - benchmark.py --resume: re-running does not re-process completed stages; state machine resumes from correct intermediate
+- MSM prediction on test split achieves $\ge 50\%$ runtime savings vs exhaustive execution
 
 ### Synthetic Ground Truth Test
 - Take one real image; apply known transform T (rotation=2 deg, scale=1.05, shift=50px each axis)
@@ -199,3 +208,21 @@ For catching regressions during implementation. Every test has an ID for CI refe
 | tile-wise model chosen | high latitude or high relief | Yes -- expected | Record ladder level; not an error |
 | RMSE > 1px for IIRS | 80m GSD + spectral appearance gap | Expected without photometric correction | Apply correction before matching |
 | LightGlue domain gap on lunar | MegaDepth training domain | Known risk | F2 checks + M0 fallback mitigate |
+
+---
+
+## 9. Matcher Selection Model (MSM) Acceptance Protocol
+
+The selector must satisfy all **8 Acceptance Criteria (AC1–AC8)** on the held-out test split before setting `msm.enabled: true`:
+
+| Criterion | Target | Description |
+|---|---|---|
+| **AC1 — Selector Accuracy** | $\ge 70.0\%$ | Fraction of test pairs where selector chooses the oracle best matcher |
+| **AC2 — Top-2 Accuracy** | $\ge 85.0\%$ | Fraction of test pairs where oracle best matcher is in top 2 predictions |
+| **AC3 — Mean RMSE Degradation** | $\le +0.10\text{ px}$ | $\overline{\text{RMSE}}_{\text{selected}} - \overline{\text{RMSE}}_{\text{oracle}}$ across test split |
+| **AC4 — Max Pair Degradation** | $\le +0.50\text{ px}$ | $\max_{i}(\text{RMSE}_{\text{selected}, i} - \text{RMSE}_{\text{oracle}, i})$ |
+| **AC5 — Runtime Reduction** | $\ge 50.0\%$ | Reduction in total matching execution time vs running all matchers |
+| **AC6 — Safe-Mode Fallback Rate** | $\le 20.0\%$ | Percentage of test pairs falling back to full safe-mode ($P < \tau_{low}$) |
+| **AC7 — Feature Importance** | $> 0$ gain | Top 5 features show non-zero split and gain importance |
+| **AC8 — Leakage Audit** | Exit Code 0 | `python -m src.evaluation.leakage_audit --manifest data/pairs/manifest.jsonl --check-msm` |
+

@@ -35,6 +35,12 @@ from src.preprocessing.branches import (
 )
 from src.preprocessing.resample import reconcile_gsd
 from src.preprocessing.tiling import tile_image, write_tile_geojson
+from src.preprocessing.stats import (
+    compute_texture_contrast,
+    compute_mean_gradient,
+    compute_image_stats,
+)
+
 
 
 # ---------------------------------------------------------------------------
@@ -484,3 +490,110 @@ class TestWriteTileGeoJSON:
         ring = geom["coordinates"][0]
         assert ring[0] == ring[-1], "Polygon ring must be closed"
         assert len(ring) == 5  # 4 corners + closing point
+
+
+# ===========================================================================
+# stats.py tests (F26 / Phase 5.5.1)
+# ===========================================================================
+
+class TestFeatureStats:
+    """Tests for compute_texture_contrast, compute_mean_gradient, and compute_image_stats."""
+
+    def test_texture_contrast_constant_image(self):
+        img = np.full((128, 128), fill_value=0.5, dtype=np.float32)
+        contrast = compute_texture_contrast(img, window_size=8)
+        assert np.isclose(contrast, 0.0, atol=1e-5)
+
+    def test_texture_contrast_high_texture(self, synthetic_image_512):
+        contrast = compute_texture_contrast(synthetic_image_512, window_size=8)
+        assert contrast > 0.0
+        assert np.isfinite(contrast)
+
+    def test_texture_contrast_with_mask(self, synthetic_image_512):
+        mask = np.ones_like(synthetic_image_512, dtype=bool)
+        mask[:128, :128] = False  # Mask out top-left
+        contrast_all = compute_texture_contrast(synthetic_image_512, window_size=8)
+        contrast_masked = compute_texture_contrast(synthetic_image_512, window_size=8, valid_mask=mask)
+        assert np.isfinite(contrast_masked)
+        assert contrast_masked > 0.0
+
+    def test_mean_gradient_constant_image(self):
+        img = np.full((128, 128), fill_value=0.5, dtype=np.float32)
+        grad = compute_mean_gradient(img)
+        assert np.isclose(grad, 0.0, atol=1e-5)
+
+    def test_mean_gradient_ramp_image(self):
+        # Linear gradient ramp: 0 to 1 along horizontal
+        img = np.tile(np.linspace(0.0, 1.0, 128, dtype=np.float32), (128, 1))
+        grad = compute_mean_gradient(img)
+        assert grad > 0.0
+        assert np.isfinite(grad)
+
+    def test_mean_gradient_with_mask(self, synthetic_image_512):
+        mask = np.ones_like(synthetic_image_512, dtype=bool)
+        mask[:100, :100] = False
+        grad = compute_mean_gradient(synthetic_image_512, valid_mask=mask)
+        assert grad > 0.0
+        assert np.isfinite(grad)
+
+    def test_compute_image_stats_dict_structure(self, synthetic_image_512):
+        stats = compute_image_stats(synthetic_image_512, window_size=8)
+        assert "texture_contrast" in stats
+        assert "mean_gradient" in stats
+        assert stats["texture_contrast"] > 0.0
+        assert stats["mean_gradient"] > 0.0
+
+    def test_process_pair_emits_feature_stats(self, tmp_path, synthetic_image_512, synthetic_ref_512):
+        from scripts.preprocess import _process_pair, _write_geotiff
+
+        # Setup test images
+        src_path = tmp_path / "raw_src.tif"
+        ref_path = tmp_path / "raw_ref.tif"
+        _write_geotiff(synthetic_image_512, src_path)
+        _write_geotiff(synthetic_ref_512, ref_path)
+
+        pair = {
+            "pair_id": "test_pair_stats",
+            "src_path": str(src_path),
+            "ref_path": str(ref_path),
+            "src_gsd_m": 0.31,
+            "ref_gsd_m": 0.50,
+            "solar_incidence_deg": 45.0,
+            "sensor_pair": "OHRC-NAC",
+        }
+        cfg = {
+            "sensor_pair": "OHRC-NAC",
+            "global": {"seed": 42},
+            "preprocessing": {
+                "shadow_mask": {"incidence_threshold_deg": 80.0, "mask_min_pct": 0.0, "mask_max_pct": 100.0},
+                "radiometric_norm": {"percentile_clip": [2, 98], "stat_transfer": True},
+                "tiling": {"size_px": 256, "overlap_px": 32, "min_tile_fraction": 0.5},
+                "gsd": {"low_angle_threshold_deg": 45.0},
+            },
+        }
+
+        out_root = tmp_path / "processed"
+        failures_path = tmp_path / "failures.jsonl"
+        ok = _process_pair(pair, cfg, out_root, failures_path, force=True)
+        assert ok is True
+
+        meta_path = out_root / "test_pair_stats" / "meta.json"
+        assert meta_path.exists()
+        with open(meta_path, "r", encoding="utf-8") as fh:
+            meta = json.load(fh)
+
+        # Assert all MSM L1.5 required feature stats are present
+        assert "src_texture_contrast" in meta
+        assert "ref_texture_contrast" in meta
+        assert "src_mean_gradient" in meta
+        assert "ref_mean_gradient" in meta
+        assert "tile_count" in meta
+        assert "masked_fraction" in meta
+        assert meta["src_texture_contrast"] > 0.0
+        assert meta["ref_texture_contrast"] > 0.0
+        assert meta["src_mean_gradient"] > 0.0
+        assert meta["ref_mean_gradient"] > 0.0
+        assert meta["tile_count"] >= 1
+        assert 0.0 <= meta["masked_fraction"] <= 1.0
+
+

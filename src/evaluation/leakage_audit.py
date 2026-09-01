@@ -153,9 +153,41 @@ def audit_leaderboard_csv(
     return len(violations) == 0, violations
 
 
+def audit_msm_dataset(
+    manifest_records: List[dict],
+    msm_stats_path: Optional[Path] = None,
+) -> Tuple[bool, List[str]]:
+    """
+    Verify MSM training data strictly excludes test geo_cells (F15/F27).
+    """
+    violations = []
+    train_cells = {r.get("geo_cell") for r in manifest_records if r.get("split") == "train" and r.get("geo_cell")}
+    test_cells = {r.get("geo_cell") for r in manifest_records if r.get("split") == "test" and r.get("geo_cell")}
+
+    overlap = train_cells & test_cells
+    if overlap:
+        violations.append(
+            f"MSM LEAKAGE: {len(overlap)} geo_cell(s) in both MSM train pool and test split: {sorted(overlap)}"
+        )
+
+    if msm_stats_path and msm_stats_path.exists():
+        try:
+            with open(msm_stats_path, "r", encoding="utf-8") as fh:
+                st = json.load(fh)
+            audit_msg = st.get("geo_cell_leakage_audit", "")
+            if "PASSED" not in audit_msg:
+                violations.append(f"MSM stats audit flag indicates failure: {audit_msg}")
+        except Exception as exc:
+            violations.append(f"Failed to parse MSM stats at {msm_stats_path}: {exc}")
+
+    return len(violations) == 0, violations
+
+
 def run_audit(
     manifest_path: str | Path,
     leaderboard_csv: Optional[str | Path] = None,
+    check_msm: bool = False,
+    msm_stats_path: Optional[str | Path] = None,
 ) -> bool:
     """
     Run the full leakage audit.
@@ -178,6 +210,12 @@ def run_audit(
         )
         passed = passed and csv_passed
         violations.extend(csv_violations)
+
+    if check_msm:
+        stats_p = Path(msm_stats_path) if msm_stats_path else Path("models/msm_v1_stats.json")
+        msm_passed, msm_violations = audit_msm_dataset(records, msm_stats_path=stats_p)
+        passed = passed and msm_passed
+        violations.extend(msm_violations)
 
     if violations:
         logger.error("=== LEAKAGE AUDIT FAILED: %d violation(s) ===", len(violations))
@@ -214,7 +252,17 @@ if __name__ == "__main__":
                         help="Path to data/pairs/manifest.jsonl")
     parser.add_argument("--leaderboard", default=None,
                         help="Path to results/leaderboard.csv (optional cross-check)")
+    parser.add_argument("--check-msm", action="store_true",
+                        help="Audit MSM training dataset and stats for geo-cell disjointness")
+    parser.add_argument("--msm-stats", default="models/msm_v1_stats.json",
+                        help="Path to models/msm_v1_stats.json")
     args = parser.parse_args()
 
-    ok = run_audit(args.manifest, leaderboard_csv=args.leaderboard)
+    ok = run_audit(
+        args.manifest,
+        leaderboard_csv=args.leaderboard,
+        check_msm=args.check_msm,
+        msm_stats_path=args.msm_stats,
+    )
     sys.exit(0 if ok else 4)   # Exit code 4 = leakage audit failed (per PIPELINE.md §8)
+

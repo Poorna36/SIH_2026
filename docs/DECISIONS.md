@@ -175,3 +175,62 @@ Architecture decision record (ADR). Every major design choice with evidence basi
 - Skipping LNIFT entirely: rejected — the evidence base explicitly identifies it as the strongest M1 candidate; ignoring it without evaluation violates the research-evidence rule.
 
 **Trade-off:** Adds one matcher to the pilot benchmark (low cost); potential payoff is a 100x runtime improvement for M1 with higher SR.
+
+---
+
+## D15 — Placement of Matcher Selection Model at L1.5 / S4.5
+
+**Decision:** The Matcher Selection Model (MSM) is placed at Layer 1.5 (Stage 4.5), immediately after preprocessing and before matcher execution.
+
+**Evidence:** Traditional_vs_DeepLearning benchmark demonstrates that running all 4 matchers across every image pair creates a 4–10x computational overhead that is prohibitive for production batch processing. Placing the model at L1.5 allows extracting rich geometric, radiometric, and texture features (from PairRecord + L1 meta.json) to make an informed routing decision before any expensive matching compute is triggered.
+
+**Alternatives rejected:**
+- Post-match arbitration only: rejected — requires running all matchers unconditionally, giving 0% runtime savings in production.
+- Pre-L1 selection (at L0): rejected — lacks critical patch-level texture contrast, gradient magnitude, and shadow mask statistics computed during L1.
+
+---
+
+## D16 — LightGBM Multi-Class Classifier Framework for MSM
+
+**Decision:** LightGBM multi-class GBDT (`objective='multiclass'`, 4 classes) is chosen as the meta-selection algorithm.
+
+**Evidence:** Tabular ML benchmarks on planetary feature sets show gradient-boosted decision trees (GBDT) drastically outperform small neural networks on small-to-medium sample sizes ($N \approx 50\text{--}500$), offering $< 5\text{ ms}$ inference time, built-in feature importance, resilience to heterogeneous feature scales, and native handling of non-linear interactions between solar angle, GSD ratio, and terrain type.
+
+**Alternatives rejected:**
+- Deep Neural Network meta-model: rejected — high sample complexity, risk of severe overfitting on small planetary calibration sets, and unnecessary GPU dependency.
+- Fixed heuristic rule-tree: rejected — cannot adapt to subtle empirical trade-offs or multi-metric confidence distributions.
+
+---
+
+## D17 — Dual Confidence Threshold Routing & Fallback Policy
+
+**Decision:** MSM routing applies a dual-threshold confidence policy: $\tau_{high} = 0.65$ (execute single predicted winner) and $\tau_{low} = 0.40$ (execute primary + fallback second choice). Below $\tau_{low}$, the system defaults to Safe Mode (runs all matchers).
+
+**Evidence:** High-stakes planetary image registration cannot tolerate silent catastrophic matcher failures. Dual-threshold routing ensures that uncertain cases automatically escalate compute to run dual matchers or safe-mode evaluation, achieving $\ge 50\%$ runtime savings while capping mean RMSE degradation $\le 0.10\text{ px}$.
+
+**Alternatives rejected:**
+- Argmax single-threshold routing: rejected — whenever the top prediction has low confidence ($P \approx 0.35$), running only one matcher risks catastrophic failure.
+- Fixed two-matcher execution: rejected — halves runtime reduction benefits on clear high-confidence pairs.
+
+---
+
+## D18 — Strict Geo-Cell Disjointness for MSM Training (F15)
+
+**Decision:** MSM training and cross-validation must strictly group samples by $10^\circ \times 10^\circ$ geographic cells (`geo_cell`), guaranteeing zero spatial overlap between training and validation/test splits.
+
+**Evidence:** Planetary features exhibit strong regional spatial correlation (crater density, regolith texture, local topography). Splitting pairs randomly allows the selector to memorize geographical cells, leading to false high confidence and test-set leakage.
+
+**Alternatives rejected:**
+- Random train/test pair split: rejected — standard ML anti-pattern in geospatial domain, violates F9/F15 ML hygiene rules.
+
+---
+
+## D19 — Operational Gate & Acceptance Criteria (AC1–AC8) for Production Activation
+
+**Decision:** The MSM model remains disabled in production (`msm.enabled: false`) until all 8 Acceptance Criteria (AC1–AC8 in VALIDATION.md §9) are formally satisfied on the held-out test split.
+
+**Evidence:** Maintaining scientific accuracy is the primary objective. Automated selection must prove non-regression against the exhaustive benchmark before being trusted to bypass matchers.
+
+**Alternatives rejected:**
+- Enabling MSM immediately upon training completion: rejected — violates benchmark-first architectural safety principle.
+

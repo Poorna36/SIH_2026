@@ -28,6 +28,11 @@ from src.preprocessing.branches import (
 )
 from src.preprocessing.resample import reconcile_gsd
 from src.preprocessing.tiling import tile_image, write_tile_geojson
+from src.preprocessing.stats import (
+    compute_texture_contrast,
+    compute_mean_gradient,
+    compute_image_stats,
+)
 
 __all__ = [
     # masks
@@ -47,4 +52,9 @@ __all__ = [
     # tiling
     "tile_image",
     "write_tile_geojson",
+    # stats
+    "compute_texture_contrast",
+    "compute_mean_gradient",
+    "compute_image_stats",
 ]
+

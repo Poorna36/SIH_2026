@@ -277,3 +277,68 @@ class BaseMatcher(ABC):
 ```
 
 All matchers must implement this interface. Adding a new matcher means: create a new class in src/matching/, register it in matchers.yaml, add it to the arbitration config.
+
+---
+
+## 10. Matcher Selection Model Interfaces (src/selector/)
+
+### 10.1 MSMFeatureVector Dataclass (`src/selector/features.py`)
+
+```python
+@dataclass
+class MSMFeatureVector:
+    pair_id:              str
+    sensor_pair_enc:      int     # 0: OHRC-NAC, 1: TMC-WAC, 2: IIRS-WAC
+    gsd_ratio:            float   # src_gsd / ref_gsd in (0, 1.0]
+    latitude_abs:         float   # |lat| in [0.0, 90.0] degrees
+    delta_solar_azimuth:  float   # |delta_az| in [0.0, 180.0] degrees
+    terrain_class_enc:    int     # 0: highland, 1: maria, 2: polar, 3: mixed
+    crater_density:       float   # log(1 + craters/Mpx)
+    masked_fraction:      float   # [0.0, 1.0]
+    overlap_fraction:     float   # (0.0, 1.0]
+    src_texture_contrast: float   # mean local std (8x8 window)
+    ref_texture_contrast: float   # mean local std (8x8 window)
+    src_mean_gradient:    float   # mean Sobel gradient magnitude (src)
+    ref_mean_gradient:    float   # mean Sobel gradient magnitude (ref)
+    tile_count:           int     # active tile count
+    feature_vector_hash:  str     # md5 hex digest of serialized vector
+```
+
+### 10.2 SelectorResult Dataclass & JSON Schema (`src/selector/model.py`, `results/<pair_id>/selector.json`)
+
+```python
+@dataclass
+class SelectorResult:
+    pair_id:              str
+    selected_matcher:     str         # "sift" | "rift2" | "lightglue" | "crater"
+    confidence:           float       # max probability (0.0 to 1.0)
+    fallback_matcher:     str         # second choice matcher
+    all_probs:            dict        # {"sift": p0, "rift2": p1, "lightglue": p2, "crater": p3}
+    routing_reason:       str         # "high_confidence", "dual_confidence", "safe_mode"
+    matchers_to_run:      list[str]   # list passed to L2 engine
+    hard_rules_applied:   list[str]   # e.g., ["crater_density_gate_blocked", "gpu_available_ok"]
+    selector_version:     str         # "msm_v1"
+    feature_vector_hash:  str
+```
+
+```json
+{
+  "pair_id": "ohr_20200827T003010__nac_M123456789",
+  "selected_matcher": "lightglue",
+  "confidence": 0.82,
+  "fallback_matcher": "rift2",
+  "all_probs": {
+    "sift": 0.05,
+    "rift2": 0.12,
+    "lightglue": 0.82,
+    "crater": 0.01
+  },
+  "routing_reason": "high_confidence_single_matcher",
+  "matchers_to_run": ["lightglue"],
+  "hard_rules_applied": ["crater_density_below_tau_c"],
+  "selector_version": "msm_v1",
+  "feature_vector_hash": "a1b2c3d4e5f6...",
+  "created_at": "2026-08-27T12:02:00Z"
+}
+```
+

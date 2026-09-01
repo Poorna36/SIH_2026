@@ -74,6 +74,7 @@ from src.preprocessing.normalize import percentile_clip, stat_transfer
 from src.preprocessing.branches import apply_ohrc_nac, apply_tmc_wac, apply_minimal, select_branch
 from src.preprocessing.resample import reconcile_gsd
 from src.preprocessing.tiling import tile_image, write_tile_geojson
+from src.preprocessing.stats import compute_texture_contrast, compute_mean_gradient
 from src.provenance import build_provenance, set_global_seed
 from src.failures import log_gate_failure as write_failure
 
@@ -370,8 +371,23 @@ def _process_pair(
     _write_geotiff(ref_resampled, out_dir / "ref.tif", profile=ref_profile.copy())
 
     # ------------------------------------------------------------------ #
-    # Step 8 — Write meta.json (provenance)
+    # Step 8 — Feature Stats & Write meta.json (provenance)
     # ------------------------------------------------------------------ #
+    src_texture_contrast = float(compute_texture_contrast(src_resampled, valid_mask=mask_resized))
+    ref_texture_contrast = float(compute_texture_contrast(ref_resampled))
+    src_mean_gradient = float(compute_mean_gradient(src_resampled, valid_mask=mask_resized))
+    ref_mean_gradient = float(compute_mean_gradient(ref_resampled))
+    tile_count = len(tiles)
+
+    provenance_log.append({
+        "stage": "feature_stats",
+        "src_texture_contrast": round(src_texture_contrast, 4),
+        "ref_texture_contrast": round(ref_texture_contrast, 4),
+        "src_mean_gradient": round(src_mean_gradient, 4),
+        "ref_mean_gradient": round(ref_mean_gradient, 4),
+        "tile_count": tile_count,
+    })
+
     prov = build_provenance(config=cfg)
     meta = {
         "pair_id": pair_id,
@@ -380,8 +396,14 @@ def _process_pair(
         "ref_gsd_m": ref_gsd,
         "solar_incidence_deg": solar_incidence,
         "mask_fraction": round(fraction, 4),
+        "masked_fraction": round(fraction, 4),
         "mask_in_range": in_range,
-        "n_tiles": len(tiles),
+        "n_tiles": tile_count,
+        "tile_count": tile_count,
+        "src_texture_contrast": round(src_texture_contrast, 4),
+        "ref_texture_contrast": round(ref_texture_contrast, 4),
+        "src_mean_gradient": round(src_mean_gradient, 4),
+        "ref_mean_gradient": round(ref_mean_gradient, 4),
         "pipeline_steps": provenance_log,
         **prov,
     }
@@ -389,8 +411,11 @@ def _process_pair(
         json.dump(meta, fh, indent=2)
 
     logger.info(
-        "[%s] Done: %d tiles, mask=%.1f%%, branch=%s, gsd_ratio=%.3f",
-        pair_id, len(tiles), fraction * 100, branch_name, gsd_meta["gsd_ratio"],
+        "[%s] Done: %d tiles, mask=%.1f%%, contrast=(%.2f, %.2f), grad=(%.2f, %.2f), branch=%s",
+        pair_id, tile_count, fraction * 100,
+        src_texture_contrast, ref_texture_contrast,
+        src_mean_gradient, ref_mean_gradient,
+        branch_name,
     )
     return True
 

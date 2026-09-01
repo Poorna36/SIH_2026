@@ -22,7 +22,11 @@ data/pairs/manifest.jsonl  (+reference crops in data/reference/) [L0]
       v
 data/processed/<pair_id>/  {src.tif, ref.tif, valid_mask.png, tiles.geojson, meta.json}
       |
-      | S4 matching        src/matching (registry loop)          [L2]
+      | S4.5 selector      src/selector/model.py                 [L1.5]
+      v
+results/<pair_id>/selector.json (routing decision, fallback, confidence)
+      |
+      | S4 matching        src/matching (registry loop / MSM routed) [L2]
       v
 results/<pair_id>/<matcher>/matches_raw.json
       |
@@ -57,7 +61,8 @@ results/leaderboard.csv  +  results/pair_results/*.json  +  arbitration.log
 | S1 ingest | scripts/ingest.py | data/raw zips | .cub + products.jsonl | spiceinit OK, footprint parsed |
 | S2 pairs | scripts/build_pairs.py | products.jsonl, ODE/WMTS | manifest.jsonl + ref crops | overlap >= 0.5 recorded |
 | S3 preprocess | scripts/preprocess.py | manifest entry | processed/<pair_id>/ | mask fraction 5-30% |
-| S4 match | src/matching registry | processed patches | matches_raw.json | >= 150 candidates |
+| S4.5 MSM | src/selector/model.py | PairRecord + meta.json | selector.json | Routing reason set |
+| S4 match | src/matching registry | processed patches + routing | matches_raw.json | >= 150 candidates |
 | S5 select | src/selection | matches_raw.json | matches_selected.json | coverage >= 0.60, >= 25 matches |
 | S6 verify | src/registration | matches_selected.json | geometry.json | inlier_ratio >= 0.05, >= 20 inliers |
 | S7 refine | src/refinement | geometry.json + patches | matches_refined.json | >= 70% refined |
@@ -153,6 +158,28 @@ Outputs under data/processed/<pair_id>/: src.tif, ref.tif, valid_mask.png, tiles
 Success gate: masked fraction between 5% and 30%. Outside this range: review thresholds, do not silently proceed.
 
 Special case: if masked fraction > 30% (extreme polar scene), keep pair (it is a stratum), flag pair, matchers proceed on unmasked area only.
+
+### S4.5 — Matcher Selection Model (L1.5)
+
+```bash
+# MSM feature extraction and prediction is automatically invoked within benchmark/production runner
+python scripts/benchmark.py --pair <pair_id> --mode msm --msm-config configs/msm.yaml
+```
+
+Steps:
+1. Feature extraction: reads PairRecord from `manifest.jsonl` and metadata from `data/processed/<pair_id>/meta.json`. Constructs 13-element `MSMFeatureVector`.
+2. Hard rule evaluation:
+   - Check `crater_density < tau_c` or terrain not in `{highland, polar_highland, polar}` $\implies$ zero probability for M3.
+   - Check GPU availability $\implies$ if unavailable and GPU required, route M2 to CPU fallback.
+   - Check `sensor_pair == IIRS-WAC` $\implies$ route to dedicated IIRS module.
+3. LightGBM inference: predicts class probability distribution across matchers: $[P_{M0}, P_{M1}, P_{M2}, P_{M3}]$.
+4. Routing decision:
+   - $P_{max} \ge \tau_{high} (0.65) \implies \text{run } [M_{best}]$.
+   - $\tau_{low} (0.40) \le P_{max} < \tau_{high} \implies \text{run } [M_{best}, M_{second}]$.
+   - $P_{max} < \tau_{low} \implies \text{run } [M_0, M_1, M_2, M_3]$ (Safe Mode).
+5. Output written to `results/<pair_id>/selector.json`.
+
+Gate to proceed: `routing_reason` set, `matchers_to_run` non-empty, feature vector MD5 hash computed.
 
 ### S4 — Matching (L2)
 

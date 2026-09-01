@@ -22,21 +22,43 @@ Produce a generic software system that finds **spatially well-distributed, sub-p
 **Secondary:** Feasible implementation within hackathon constraints.
 
 ---
+## 1. System Overview
 
-## 1. System Overview
-
-The system is a **benchmark-first, pluggable matcher architecture**. Five major concerns are handled by dedicated components:
+The system is a **benchmark-first, pluggable matcher architecture** enhanced with an intelligent **Matcher Selection Model (MSM)** for production acceleration. Six major concerns are handled by dedicated components:
 
 | Concern | Component |
 |---|---|
 | Data ingestion and geometry | L0 — Data and Geometry Layer |
 | Appearance normalization | L1 — Preprocessing |
+| Intelligent matcher routing | L1.5 — Matcher Selection Model (MSM) |
 | Correspondence finding | L2 — Correspondence Engine (M0–M3) |
 | Spatial uniformity enforcement | L3 — Uniform Correspondence Optimization |
 | Geometric verification and sub-pixel accuracy | L4 + L5 |
 | Products and evaluation | L6 + L7 |
 
 No component is included merely because it is modern or popular. Each solves a specific documented problem.
+
+---
+
+## 1.1 The 15 Architectural Fixes
+
+| # | Fix | Description & Rationale | Source Evidence |
+|---|---|---|---|
+| F1 | **Dual-Stage Spatial Selection** | (a) Keypoint ANMS (SSC variant) *before* matching for sparse matchers; (b) match-level grid/coverage selection *after* matching for all matchers. | Supplementary research §1; LoFTR-SPP |
+| F2 | **Mandatory Geometric Sanity Check** | In-image-domain bounds + one-to-one constraint enforced on every learned match set. | HybridPhaseCorrelation: LoFTR produces out-of-domain extrapolated matches |
+| F3 | **Hierarchical Model Ladder** | Fit similarity → affine → homography → tile-wise local models in sequence. | SIFT-IIRS-WAC, DESCA, HybridPhaseCorrelation |
+| F4 | **No Preprocessing Overspend** | Learned matchers skip heavy preprocessing (CLAHE/shadow normalization); matcher must carry illumination robustness. | Traditional-vs-DL: classical methods failed polar despite preprocessing |
+| F5 | **Deep-Shadow Validity Masking** | Shadow/low-information mask computed from solar geometry + local variance before matching; masked pixels excluded. | KAZE (PC limit in textureless shadow); CNSFM |
+| F6 | **DESCA Two-Tier Match Set** | Strict $NNDR \approx 0.7$ for initialization + loose $NNDR \approx 1.0$ as evaluation pool. | DESCA takeaway #5 |
+| F7 | **Phase-Correlation Recipe** | Gaussian/Tukey apodization windows (never Blackman), Gaussian pyramid coarse-to-fine, 2D paraboloid peak fit. | HybridPhaseCorrelation takeaway #7 |
+| F8 | **Multi-Metric Quality Proxy** | Match count is never a proxy for quality. RMSE, inlier ratio, and spatial coverage reported together on held-out points. | Traditional-vs-DL takeaway #6 |
+| F9 | **Geographic Leakage Rule** | Benchmark splits by disjoint geographic cells ($10^\circ \times 10^\circ$ lon/lat), never random pair splits. | Standard ML hygiene |
+| F10 | **Strict Provenance Rules** | Never rename ISRO `.img`/`.xml` products (breaks `isisimport`); use ASP $\ge 3.7.0$ conda env with per-orbit-date CK kernels. | ASP §8.15 Chandrayaan-2 example |
+| F11 | **Terrain-Adaptive Arbitration** | Confidence-based fallback (learned $\to$ classical when learned confidence low; crater branch gated). | CNSFM; SuperGlue hybrid hypothesis |
+| F12 | **Separate IIRS Track** | Photometric correction (incidence/emission/phase) $\to$ SIFT-class registration vs WAC; sub-80m target. | Supplementary research §7 |
+| F13 | **Spatial Coverage First-Class Metric** | Grid density std-dev / percent cells populated measured alongside RMSE and inlier ratio. | Problem statement requirement; LoFTR-SPP |
+| F14 | **Gated Crater Branch** | Crater-density check first ($\ge \tau_c$); branch activates only in crater-rich terrain. | CNSFM: 72.3% SR at south pole vs 31.2% baseline |
+| F15 | **Geo-Cell Disjoint MSM Training** | MSM training uses geo-cell-disjoint splits (same F9 rule) and activates only after full benchmark validation. | Standard ML hygiene; prevents selector leakage |
 
 ---
 
@@ -66,8 +88,27 @@ No component is included merely because it is modern or popular. Each solves a s
  |                    learned matchers M2/M3: minimal only)          |
  |  -> tiling (overlapping, heterogeneity handling)                  |
  |  -> GSD reconciliation pyramid (coarser side resampled up)        |
+ |  -> writes L1 meta.json (masked_fraction, patch stats, tiles)     |
  +----------------------------+--------------------------------------+
-                              v
+                              v  PairRecord + L1 meta.json
+ +===================================================================+
+ | L1.5  MATCHER SELECTION MODEL (MSM)                               |
+ |  FeatureVector <- {sensor_pair, gsd_ratio, latitude_abs,          |
+ |    delta_solar_azimuth, terrain_class, crater_density,            |
+ |    masked_fraction, overlap_fraction, texture_contrast x 2,       |
+ |    mean_gradient x 2, tile_count}  (13 features)                  |
+ |  Model: LightGBM multi-class classifier (4 classes = matchers)    |
+ |  -> SelectorResult {selected_matcher, confidence, fallback,       |
+ |                    all_probs, routing_reason}                     |
+ |  Routing:                                                         |
+ |    confidence >= tau_high (0.65) -> run selected_matcher only     |
+ |    confidence in [tau_low, tau_high) -> run fallback_matcher      |
+ |    confidence < tau_low (0.40)  -> run all matchers (safe mode)   |
+ |  Hard rules: M3 blocked if crater_density < tau_c;                |
+ |              M2 blocked if no GPU                                 |
+ |  Benchmark mode: selector bypassed; all matchers run              |
+ +===================================================================+
+                              v  routing decision
  +-------------------------------------------------------------------+
  | L2  CORRESPONDENCE ENGINE  (pluggable registry)                   |
  |                                                                   |
@@ -79,6 +120,7 @@ No component is included merely because it is modern or popular. Each solves a s
  |  Common interface: detect/describe/match -> kpts, matches, scores |
  |  ANMS (SSC) applied PRE-MATCH for sparse matchers (M0/M1):       |
  |    detect -> ANMS -> describe -> match                            |
+ |  In MSM production mode: only the routed matcher(s) run           |
  +----------------------------+--------------------------------------+
                               v
  +-------------------------------------------------------------------+
@@ -118,11 +160,14 @@ No component is included merely because it is modern or popular. Each solves a s
  |  RMSE (held-out GT), pct<1px, pct<0.5px, MedAE, inlier cnt/ratio,|
  |  spatial coverage, grid-density std-dev, runtime;                 |
  |  precision/recall/matching-score where GT allows -> leaderboard   |
+ |  -> MSM training labels (train split only)                        |
+ |  -> MSM benchmark: selector accuracy, RMSE degradation,          |
+ |    runtime reduction, fallback rate (F15)                         |
  +-------------------------------------------------------------------+
 
- Parallel IIRS track (separate module):
-   IIRS QUB -> photometric correction -> SIFT-class match vs WAC
-   -> target: sub-pixel at 80 m GSD (sub-80 m RMSE absolute)
+  Parallel IIRS track (separate module):
+    IIRS QUB -> photometric correction -> SIFT-class match vs WAC
+    -> target: sub-pixel at 80 m GSD (sub-80 m RMSE absolute)
 ```
 
 ---
@@ -159,6 +204,43 @@ Original filenames preserved — isisimport depends on original names.
 **Tiling:** Overlapping tiles (tiles smaller than half the grid are discarded); per-tile processing handles scene heterogeneity.
 
 **GSD reconciliation:** Pyramid resampling of the coarser-GSD image; interpolation method selected conditionally on solar geometry — bilinear for low-angle/high-shadow, bicubic for high-angle/high-detail (MoonMetaSync finding).
+
+**Provencance & Feature Stats Export:** Outputs `meta.json` recording masked fraction, patch texture contrast, mean gradients, and non-discarded tile count for MSM feature extraction.
+
+### L1.5 — Matcher Selection Model (MSM)
+
+**Purpose:** Eliminate the compute cost of running all matchers in production by dynamically routing each image pair to its predicted optimal matcher pipeline (M0/M1/M2/M3) based on a 13-dimensional scene and sensor feature vector.
+
+**Inputs:** PairRecord (manifest.jsonl) + L1 provenance (`meta.json`).
+
+**Feature Vector (13 features):**
+1. `sensor_pair_enc`: Encoded sensor pair {0: OHRC-NAC, 1: TMC-WAC, 2: IIRS-WAC}
+2. `gsd_ratio`: GSD ratio $\text{GSD}_{\text{source}} / \text{GSD}_{\text{reference}}$
+3. `latitude_abs`: Centroid absolute latitude $|lat| \in [0.0^\circ, 90.0^\circ]$
+4. `delta_solar_azimuth`: Solar azimuth difference $|\Delta az| \in [0.0^\circ, 180.0^\circ]$
+5. `terrain_class_enc`: Terrain encoding {0: highland, 1: maria, 2: polar, 3: mixed}
+6. `crater_density`: Log crater density $\log(1 + \text{crater\_density})$
+7. `masked_fraction`: Fraction of pixels masked by shadow/validity mask
+8. `overlap_fraction`: Footprint overlap fraction $(0.0, 1.0]$
+9. `src_texture_contrast`: Mean local standard deviation in $8\times 8$ windows (source)
+10. `ref_texture_contrast`: Mean local standard deviation in $8\times 8$ windows (reference)
+11. `src_mean_gradient`: Mean Sobel gradient magnitude (source)
+12. `ref_mean_gradient`: Mean Sobel gradient magnitude (reference)
+13. `tile_count`: Active tile count post-reconciliation
+
+**Model & Routing Policy:**
+- **Model:** LightGBM multi-class gradient boosted decision trees (`objective='multiclass'`, 4 classes).
+- **Dual Confidence Routing:**
+  - High confidence ($P_{max} \ge \tau_{high} = 0.65$): Execute predicted matcher only.
+  - Medium confidence ($\tau_{low} \le P_{max} < \tau_{high}$): Execute primary + fallback matcher.
+  - Low confidence ($P_{max} < \tau_{low} = 0.40$): Safe mode — run all eligible matchers.
+- **Hard Rule Gating:**
+  - M3 (Crater) blocked if `crater_density < tau_c` or terrain not in highland/polar.
+  - M2 (LightGlue) downgraded to CPU or blocked if GPU required and unavailable.
+  - IIRS pairs routed directly to dedicated IIRS module.
+- **Benchmark vs Production Mode:** In benchmark mode, the MSM model records predictions for validation, but all matchers are run for complete evaluation. In production mode, only routed matchers run.
+
+**Output:** `results/<pair_id>/selector.json` (contains `selected_matcher`, `confidence`, `fallback_matcher`, `matchers_to_run`, `routing_reason`).
 
 ### L2 — Correspondence Engine (pluggable)
 
@@ -209,41 +291,40 @@ All matchers implement one interface. Registry is config-driven. M0 always runs 
 - Per (matcher x sensor-pair x stratum): RMSE on held-out GT checkpoints, pct<1px, pct<0.5px, MedAE, inlier count/ratio, spatial coverage, grid-density std-dev, refinement gain, runtime, precision/recall/matching-score where GT allows
 - **Leakage policy:** splits by disjoint 10x10 degree geo-cells; split ID in manifest; every report states its split
 - **Ground truth:** (1) manual 6x6-grid tie points on 15-20 pairs (30-50 points each, 20% QC re-annotation); (2) cross-method consistency adjudication; (3) LOLA/pc_align anchor where available
-- Output: results/leaderboard.csv + per-pair JSON -> drives matcher arbitration
+- Output: results/leaderboard.csv + per-pair JSON -> drives MSM training labels on train split and MSM validation on test split
 
 ---
 
-## 4. Matcher Arbitration Policy
+## 4. Matcher Selection & Arbitration Policy
 
 **Two execution modes — explicitly separated:**
-- **Benchmark / evaluation mode:** all eligible matchers run on every pair; the evaluation harness (L7) selects the winner per stratum empirically. Use `scripts/benchmark.py`.
-- **Production / arbitration mode:** the policy below selects one primary matcher per pair at runtime, after benchmark results have established the per-stratum winner. M0 always runs in both modes.
+- **Benchmark / Evaluation Mode (`--mode benchmark`):** All eligible matchers run on every pair in the test/validation set. The evaluation harness (L7) records complete ground truth metrics across all matchers to generate `leaderboard.csv` and oracle best-matcher labels for MSM training.
+- **Production / Accelerated Mode (`--mode msm`):** The Matcher Selection Model (MSM at L1.5) evaluates the 13-dimensional scene feature vector and routes execution:
 
 ```
-# Production arbitration (benchmark mode runs all matchers regardless)
-if crater_density_per_km2 >= tau_c and terrain_class in {highland, polar_highland, polar}
-    and detector_validated:
-    primary = M3  # crater-geometry
-elif learned_confidence_ok:  # NOT gated on gpu_available
-    primary = M2  # LightGlue (CPU or GPU)
+# MSM Production Routing & Escalation Logic
+features = extract_msm_features(PairRecord, L1_meta)
+hard_rule_filter(features)  # Blocks M3 if crater_density < tau_c; blocks M2 if no GPU
+
+probs = msm_model.predict_proba(features)
+p_max, selected_matcher = max(probs), argmax(probs)
+p_second, fallback_matcher = second_max(probs)
+
+if p_max >= tau_high (0.65):
+    matchers_to_run = [selected_matcher]
+    routing_reason = "high_confidence_single_matcher"
+elif p_max >= tau_low (0.40):
+    matchers_to_run = [selected_matcher, fallback_matcher]
+    routing_reason = "medium_confidence_dual_matcher"
 else:
-    primary = M1  # RIFT2 or LNIFT (CPU-only; flag no_validated_primary_matcher if polar)
-# M0 always runs in parallel as baseline and fallback
-if primary.inlier_ratio < inlier_ratio_floor:
-    fallback to M0 result; record in arbitration.log
+    matchers_to_run = [M0, M1, M2, M3]  # Safe mode: benchmark all
+    routing_reason = "low_confidence_safe_mode"
 
-# Total-failure path (M0 also fails after widened t_gsd):
-#   record pair_outcome=TOTAL_FAILURE in failures.jsonl
-#   write empty registered.tif placeholder
-#   exclude pair from leaderboard RMSE aggregate
-#   include pair in failure_rate denominator -- never silently omit
-
-# Tie-break rule (two matchers statistically indistinguishable on a pair):
-#   "Indistinguishable" = RMSE difference < gt_interannotator_rmse_px AND
-#                         inlier_ratio difference < 0.05
-#   Resolution: apply preference_order list from CONFIGURATION.md arbitration block
-#   (crater > lightglue > lnift > rift2 > sift)
-#   Record tie_break=true in arbitration.log with both matcher RMSEs
+# Dynamic Escalation & Recovery:
+# If selected_matcher fails S4 gate (< 150 candidates) or S6 gate (< 5% inliers):
+#   1. Escalate immediately to fallback_matcher
+#   2. If fallback_matcher also fails, fall back to M0 (SIFT baseline)
+#   3. Total failure logged only if M0 also fails after widened t_gsd
 ```
 
 ---
@@ -274,20 +355,26 @@ SIH/
 |-- VALIDATION.md
 |-- IMPLEMENTATION_PLAN.md
 |-- DECISIONS.md
+|-- CHANGES.md
 |-- configs/
 |   |-- ohrc_nac.yaml
 |   |-- tmc_wac.yaml
 |   |-- iirs_wac.yaml
-|   +-- matchers.yaml
+|   |-- matchers.yaml
+|   +-- msm.yaml        # MSM model thresholds, hard gates & fallback configs
 |-- data/
 |   |-- raw/            # ISRO zips, original filenames REQUIRED
 |   |-- calibrated/     # ISIS .cub after isisimport/spiceinit
 |   |-- reference/      # NAC strips, WAC mosaic + crops
 |   |-- pairs/          # manifest.jsonl, skipped.jsonl
 |   +-- metadata/       # parsed labels, SPICE/kernel logs, gt/
+|-- models/             # Trained MSM models (msm_v1.pkl, msm_v1_stats.json)
 |-- src/
 |   |-- ingest/
 |   |-- preprocessing/
+|   |-- selector/       # MSM Feature extraction & LightGBM inference
+|   |   |-- features.py # 13-feature vector extractor
+|   |   +-- model.py    # MatcherSelector class & routing logic
 |   |-- geometry/
 |   |-- matching/
 |   |   |-- base.py     # Matcher interface (ABC)
@@ -298,12 +385,13 @@ SIH/
 |   |-- selection/      # anms.py (SSC), spatial.py (grid+coverage)
 |   |-- registration/   # DEGENSAC/MAGSAC, model ladder, declustering
 |   |-- refinement/     # NCC/phase-corr, paraboloid peak fit
-|   +-- evaluation/     # metrics, leaderboard, leakage audit
+|   +-- evaluation/     # metrics, leaderboard, leakage audit, msm_eval.py
 |-- scripts/
 |   |-- ingest.py
 |   |-- build_pairs.py
 |   |-- preprocess.py
-|   |-- benchmark.py
+|   |-- benchmark.py    # S4+S5 (+ optional MSM selector routing)
+|   |-- train_msm.py    # Geo-cell disjoint MSM LightGBM trainer
 |   +-- register.py
 |-- results/
 |   +-- arbitration.log
