@@ -185,7 +185,9 @@ class MatcherSelector:
         # -------------------------------------------------------------- #
         # 2. Enforce Hard Rule Gating
         # -------------------------------------------------------------- #
-        probs = np.array(raw_probs, dtype=np.float32).copy()
+        probs = np.zeros(len(MATCHER_NAMES), dtype=np.float32)
+        for i in range(min(len(raw_probs), len(MATCHER_NAMES))):
+            probs[i] = float(raw_probs[i])
 
         # Gate A: Crater branch gating (F14, DEC-013)
         crater_gate = self.hard_rules.get("crater_density_gate", {})

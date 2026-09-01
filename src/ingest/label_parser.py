@@ -131,7 +131,7 @@ def _normalize_lon(lon: float) -> float:
 
 
 def _extract_corner_coords(
-    coord_elem: ET.Element,
+    xml_elem: ET.Element,
     ns_stripped: bool = True,
 ) -> Optional[List[List[float]]]:
     """
@@ -143,7 +143,7 @@ def _extract_corner_coords(
         [upper_left, upper_right, lower_right, lower_left] each as [lon, lat].
     """
     def _float(tag: str) -> Optional[float]:
-        el = coord_elem.find(tag)
+        el = xml_elem.find(tag)
         if el is not None and el.text:
             try:
                 return float(el.text.strip())
@@ -163,12 +163,14 @@ def _extract_corner_coords(
     if any(v is None for v in [ul_lat, ul_lon, ur_lat, ur_lon, lr_lat, lr_lon, ll_lat, ll_lon]):
         return None
 
-    return [
+    res = [
         [_normalize_lon(ul_lon), ul_lat],   # upper_left
         [_normalize_lon(ur_lon), ur_lat],   # upper_right
         [_normalize_lon(lr_lon), lr_lat],   # lower_right
         [_normalize_lon(ll_lon), ll_lat],   # lower_left
     ]
+    assert len(res) == 4 and all(len(c) == 2 for c in res), "Expected 4 corners, each as (lon, lat) tuple"
+    return res
 
 
 def _strip_ns(tag: str) -> str:

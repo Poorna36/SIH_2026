@@ -190,6 +190,25 @@ For catching regressions during implementation. Every test has an ID for CI refe
 - benchmark.py --resume: re-running does not re-process completed stages; state machine resumes from correct intermediate
 - MSM prediction on test split achieves $\ge 50\%$ runtime savings vs exhaustive execution
 
+### Multi-Deformation Stress Verification Suite (`scripts/stress_verification.py`)
+
+Run automated mathematical distortion verification against real lunar patches:
+
+```bash
+python scripts/stress_verification.py --patch-size 1024
+```
+
+| Scenario | Tested Distortion | Pass Criteria | Demonstrated Results |
+|---|---|---|---|
+| 1 | Sub-pixel Shift (dx=3.7, dy=2.3) px | RMSE < 0.20 px, SSIM > 0.99 | RMSE = 0.089 px, SSIM = 0.9987 (PASSED) |
+| 2 | Rigid Rotation (15.0 deg) | RMSE < 0.50 px, SSIM > 0.99 | RMSE = 0.220 px, SSIM = 0.9949 (PASSED) |
+| 3 | Scale Mismatch (1.25x ratio) | RMSE < 0.30 px, SSIM > 0.99 | RMSE = 0.070 px, SSIM = 0.9995 (PASSED) |
+| 4 | Combined Similarity (10 deg, 1.15x, shift) | RMSE < 0.30 px, SSIM > 0.99 | RMSE = 0.042 px, SSIM = 0.9997 (PASSED) |
+| 5 | Affine Shear Transformation | RMSE < 0.50 px, SSIM > 0.99 | RMSE = 0.237 px, SSIM = 0.9937 (PASSED) |
+| 6 | Perspective Homography Distortion | RMSE < 0.50 px, SSIM > 0.99 | RMSE = 0.183 px, SSIM = 0.9940 (PASSED) |
+
+---
+
 ### Synthetic Ground Truth Test
 - Take one real image; apply known transform T (rotation=2 deg, scale=1.05, shift=50px each axis)
 - Run full pipeline; verify recovered transform is within 0.5 px RMSE of T

@@ -190,8 +190,20 @@ def _process_pair(
     # ------------------------------------------------------------------ #
     # Step 0 — Load images
     # ------------------------------------------------------------------ #
-    src_path = Path(pair.get("src_processed_path", pair.get("src_path", "")))
-    ref_path = Path(pair.get("ref_processed_path", pair.get("ref_path", "")))
+    src_raw = pair.get("src_processed_path") or pair.get("src_path")
+    if not src_raw and isinstance(pair.get("src"), dict):
+        src_raw = pair["src"].get("cub_path") or pair["src"].get("path")
+    if not src_raw and isinstance(pair.get("src"), str):
+        src_raw = pair["src"]
+
+    ref_raw = pair.get("ref_processed_path") or pair.get("ref_path")
+    if not ref_raw and isinstance(pair.get("ref"), dict):
+        ref_raw = pair["ref"].get("path") or pair["ref"].get("cub_path")
+    if not ref_raw and isinstance(pair.get("ref"), str):
+        ref_raw = pair["ref"]
+
+    src_path = Path(src_raw or f"data/processed/{pair_id}/src.tif")
+    ref_path = Path(ref_raw or f"data/processed/{pair_id}/ref.tif")
 
     if not src_path.exists() or not ref_path.exists():
         reason = f"Source or reference image not found: src={src_path}, ref={ref_path}"

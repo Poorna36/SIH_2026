@@ -88,11 +88,31 @@ def run_pair_matcher(pair, matcher_id, results_dir, data_dir):
         return {"pair_id": pair_id, "matcher": matcher_id,
                 "status": "skipped_no_images"}
 
-    src_img = cv2.imread(str(src_tif), cv2.IMREAD_GRAYSCALE)
-    ref_img = cv2.imread(str(ref_tif), cv2.IMREAD_GRAYSCALE)
-    if src_img is None or ref_img is None:
-        return {"pair_id": pair_id, "matcher": matcher_id,
-                "status": "failed_image_load"}
+    try:
+        import rasterio
+        with rasterio.open(src_tif) as ds:
+            s_arr = ds.read(1).astype(np.float32)
+        with rasterio.open(ref_tif) as ds:
+            r_arr = ds.read(1).astype(np.float32)
+
+        def _to_u8(img):
+            if img.dtype == np.uint8:
+                return img
+            v_min, v_max = img.min(), img.max()
+            if v_max > v_min:
+                norm = (img - v_min) / (v_max - v_min)
+            else:
+                norm = img
+            return (np.clip(norm, 0.0, 1.0) * 255.0).astype(np.uint8)
+
+        src_img = _to_u8(s_arr)
+        ref_img = _to_u8(r_arr)
+    except Exception:
+        src_img = cv2.imread(str(src_tif), cv2.IMREAD_GRAYSCALE)
+        ref_img = cv2.imread(str(ref_tif), cv2.IMREAD_GRAYSCALE)
+        if src_img is None or ref_img is None:
+            return {"pair_id": pair_id, "matcher": matcher_id,
+                    "status": "failed_image_load"}
 
     sel = _load_json(selected_path)
     src_xy = np.asarray(sel["src_xy"], dtype=np.float32)

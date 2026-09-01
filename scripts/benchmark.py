@@ -278,15 +278,35 @@ def _run_pair_matcher(
         return {"pair_id": pair_id, "matcher": mid, "status": "failed", "reason": reason}
 
     try:
-        import cv2
-        src_img = cv2.imread(str(src_path), cv2.IMREAD_GRAYSCALE)
-        ref_img = cv2.imread(str(ref_path), cv2.IMREAD_GRAYSCALE)
-        if src_img is None or ref_img is None:
-            raise FileNotFoundError("Could not read processed images")
-    except Exception as exc:
-        reason = f"image_load_failed: {exc}"
-        _log_failure(out_root, pair_id, mid, "S4", reason)
-        return {"pair_id": pair_id, "matcher": mid, "status": "failed", "reason": reason}
+        import rasterio
+        with rasterio.open(src_path) as ds:
+            s_arr = ds.read(1).astype(np.float32)
+        with rasterio.open(ref_path) as ds:
+            r_arr = ds.read(1).astype(np.float32)
+
+        def _to_u8(img):
+            if img.dtype == np.uint8:
+                return img
+            v_min, v_max = img.min(), img.max()
+            if v_max > v_min:
+                norm = (img - v_min) / (v_max - v_min)
+            else:
+                norm = img
+            return (np.clip(norm, 0.0, 1.0) * 255.0).astype(np.uint8)
+
+        src_img = _to_u8(s_arr)
+        ref_img = _to_u8(r_arr)
+    except Exception as exc_rast:
+        try:
+            import cv2
+            src_img = cv2.imread(str(src_path), cv2.IMREAD_GRAYSCALE)
+            ref_img = cv2.imread(str(ref_path), cv2.IMREAD_GRAYSCALE)
+            if src_img is None or ref_img is None:
+                raise FileNotFoundError(f"Could not read processed images: {exc_rast}")
+        except Exception as exc:
+            reason = f"image_load_failed: {exc}"
+            _log_failure(out_root, pair_id, mid, "S4", reason)
+            return {"pair_id": pair_id, "matcher": mid, "status": "failed", "reason": reason}
 
     gsd_ratio = float(pair.get("gsd_ratio", 1.0))
 

@@ -344,7 +344,7 @@ class TestMSMValidationProtocol:
     def test_msm_eval_suite_runs_and_passes(self, tmp_path):
         """Verify src/evaluation/msm_eval.py runs and meets AC1–AC8."""
         from src.evaluation.msm_eval import evaluate_msm_suite
-        manifest_path = Path("data/pairs/manifest.jsonl")
+        manifest_path = Path("data/pairs/manifest_phase7.jsonl") if Path("data/pairs/manifest_phase7.jsonl").exists() else Path("data/pairs/manifest.jsonl")
         model_path = Path("models/msm_v1.pkl")
         model_stats_path = Path("models/msm_v1_stats.json")
 

@@ -147,7 +147,7 @@ def build_record(idx: int, out_base: Path) -> Dict[str, Any]:
         "crater_density_per_km2": profile["crater_density"],
         "geo_cell": f"{int(profile['latitude_center_deg'] // 10 * 10)}_{0 if split == 'train' else 100}",
         "split": split,
-        "gt_path": str(gt_file.relative_to(out_base)),
+        "gt_path": str(gt_file.relative_to(out_base)) if split == "test" else "",
         "created_at": "2026-09-01T00:00:00Z",
     }
     return record
