@@ -1,0 +1,13 @@
+{
+  "products_written": 4,
+  "files": [
+    "ch2_ohr_ncp_20211228t2209123959_d_img_d18",
+    "ch2_iir_nri_20240524t1710004919_d_img_d18",
+    "ch2_iir_nri_20240427t1010597893_d_img_d18",
+    "ch2_iir_nri_20210620t2058297275_d_img_hw1"
+  ],
+  "all_have_footprint": true,
+  "all_have_solar": true,
+  "all_have_gsd": true,
+  "errors": []
+}

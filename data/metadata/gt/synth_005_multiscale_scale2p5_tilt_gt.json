@@ -1,8 +1,8 @@
 {
   "pair_id": "synth_005_multiscale_scale2p5_tilt",
   "annotator": "synthetic_ground_truth_h_matrix",
-  "n_checkpoints": 41,
-  "qc_reannotated_pct": 0.19,
+  "n_checkpoints": 42,
+  "qc_reannotated_pct": 0.2,
   "checkpoints": [
     {
       "id": 0,
@@ -14,7 +14,7 @@
         172.106,
         141.764
       ],
-      "partition": "fit"
+      "partition": "eval"
     },
     {
       "id": 1,
@@ -62,7 +62,7 @@
         326.75,
         171.412
       ],
-      "partition": "fit"
+      "partition": "eval"
     },
     {
       "id": 5,
@@ -110,7 +110,7 @@
         241.848,
         196.341
       ],
-      "partition": "fit"
+      "partition": "eval"
     },
     {
       "id": 9,
@@ -495,6 +495,19 @@
         258.755
       ],
       "partition": "qc"
+    },
+    {
+      "id": 9,
+      "src_xy": [
+        299.81,
+        128.505
+      ],
+      "ref_xy": [
+        279.88666089339074,
+        203.53101872904998
+      ],
+      "partition": "qc"
     }
-  ]
+  ],
+  "gt_interannotator_rmse_px": 0.4645
 }

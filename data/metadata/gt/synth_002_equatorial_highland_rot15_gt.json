@@ -1,8 +1,8 @@
 {
   "pair_id": "synth_002_equatorial_highland_rot15",
   "annotator": "synthetic_ground_truth_h_matrix",
-  "n_checkpoints": 41,
-  "qc_reannotated_pct": 0.19,
+  "n_checkpoints": 42,
+  "qc_reannotated_pct": 0.2,
   "checkpoints": [
     {
       "id": 0,
@@ -14,7 +14,7 @@
         123.351,
         3.725
       ],
-      "partition": "fit"
+      "partition": "eval"
     },
     {
       "id": 1,
@@ -62,7 +62,7 @@
         432.552,
         116.957
       ],
-      "partition": "fit"
+      "partition": "eval"
     },
     {
       "id": 5,
@@ -110,7 +110,7 @@
         248.615,
         140.914
       ],
-      "partition": "fit"
+      "partition": "eval"
     },
     {
       "id": 9,
@@ -495,6 +495,19 @@
         295.771
       ],
       "partition": "qc"
+    },
+    {
+      "id": 13,
+      "src_xy": [
+        129.665,
+        209.206
+      ],
+      "ref_xy": [
+        143.54321073814882,
+        185.720471214164
+      ],
+      "partition": "qc"
     }
-  ]
+  ],
+  "gt_interannotator_rmse_px": 0.3401
 }

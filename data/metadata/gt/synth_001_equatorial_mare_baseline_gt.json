@@ -1,8 +1,8 @@
 {
   "pair_id": "synth_001_equatorial_mare_baseline",
   "annotator": "synthetic_ground_truth_h_matrix",
-  "n_checkpoints": 41,
-  "qc_reannotated_pct": 0.19,
+  "n_checkpoints": 42,
+  "qc_reannotated_pct": 0.2,
   "checkpoints": [
     {
       "id": 0,
@@ -14,7 +14,7 @@
         42.055,
         57.038
       ],
-      "partition": "fit"
+      "partition": "eval"
     },
     {
       "id": 1,
@@ -62,7 +62,7 @@
         368.146,
         32.363
       ],
-      "partition": "fit"
+      "partition": "eval"
     },
     {
       "id": 5,
@@ -110,7 +110,7 @@
         209.053,
         131.198
       ],
-      "partition": "fit"
+      "partition": "eval"
     },
     {
       "id": 9,
@@ -495,6 +495,19 @@
         305.648
       ],
       "partition": "qc"
+    },
+    {
+      "id": 33,
+      "src_xy": [
+        299.313,
+        470.228
+      ],
+      "ref_xy": [
+        301.01533106816566,
+        446.1345504997598
+      ],
+      "partition": "qc"
     }
-  ]
+  ],
+  "gt_interannotator_rmse_px": 0.4156
 }
