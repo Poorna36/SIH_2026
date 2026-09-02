@@ -417,6 +417,9 @@ def generate_synthetic_pair(
     # 2. Apply geometric transform to image
     # -------------------------------------------------------------------------
     synthetic = apply_transform(source_image, M, interpolation=interpolation)
+    # Clip to [0, 1]: Lanczos interpolation can produce slight Gibbs ringing
+    # (overshoot/undershoot). All subsequent photometric transforms require [0,1].
+    synthetic = np.clip(synthetic, 0.0, 1.0).astype(np.float32)
 
     # -------------------------------------------------------------------------
     # 3. Photometric: illumination gamma correction

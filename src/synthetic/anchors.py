@@ -158,6 +158,344 @@ def _extract_shi_tomasi_grid(
     return all_anchors
 
 
+# ---------------------------------------------------------------------------
+# Phase 2+ Morphological Bucket Detectors
+# ---------------------------------------------------------------------------
+
+def _extract_craters(
+    image: np.ndarray,
+    gradient_map: np.ndarray,
+    quota: int,
+    rng: np.random.Generator,
+) -> List[AnchorPoint]:
+    """Phase 2+: Crater rim / floor anchor extraction.
+
+    Uses HoughCircles on an edge-enhanced image to detect crater rims.
+    Samples both rim and floor points for each detected crater.
+
+    Args:
+        image: Single-channel float32 image (normalised to [0, 1]).
+        gradient_map: Pre-computed Sobel gradient magnitude map.
+        quota: Target number of anchors from this bucket.
+        rng: NumPy random generator for reproducibility.
+
+    Returns:
+        List of AnchorPoint objects with feature_class="crater".
+    """
+    h, w = image.shape[:2]
+    # Normalise to uint8 for HoughCircles
+    img_u8 = np.clip(image * 255, 0, 255).astype(np.uint8)
+    blurred = cv2.GaussianBlur(img_u8, (5, 5), 1.5)
+
+    anchors: List[AnchorPoint] = []
+
+    # HoughCircles: detect circular crater rims
+    min_r = max(5, min(h, w) // 40)
+    max_r = max(min_r + 5, min(h, w) // 8)
+    circles = cv2.HoughCircles(
+        blurred,
+        cv2.HOUGH_GRADIENT,
+        dp=1.2,
+        minDist=min_r * 2,
+        param1=80,
+        param2=30,
+        minRadius=min_r,
+        maxRadius=max_r,
+    )
+
+    if circles is not None:
+        circles = np.round(circles[0]).astype(int)
+        for (cx, cy, r) in circles:
+            if len(anchors) >= quota:
+                break
+            # Sample 4 rim points (N, E, S, W) — float precision
+            for angle_deg in [0, 90, 180, 270]:
+                ang = np.deg2rad(angle_deg)
+                rim_x = float(np.clip(cx + r * np.cos(ang), 0, w - 1))
+                rim_y = float(np.clip(cy + r * np.sin(ang), 0, h - 1))
+                grad = float(gradient_map[int(rim_y), int(rim_x)])
+                anchors.append(AnchorPoint(
+                    id=-1, src_x=rim_x, src_y=rim_y,
+                    feature_class="crater", gradient_magnitude=grad,
+                ))
+            # Sample floor centre
+            floor_x = float(np.clip(cx + rng.uniform(-r * 0.3, r * 0.3), 0, w - 1))
+            floor_y = float(np.clip(cy + rng.uniform(-r * 0.3, r * 0.3), 0, h - 1))
+            grad = float(gradient_map[int(floor_y), int(floor_x)])
+            anchors.append(AnchorPoint(
+                id=-1, src_x=floor_x, src_y=floor_y,
+                feature_class="crater", gradient_magnitude=grad,
+            ))
+
+    logger.debug("_extract_craters: found %d anchors (quota=%d)", len(anchors), quota)
+    return anchors[:quota]
+
+
+def _extract_ridges(
+    image: np.ndarray,
+    gradient_map: np.ndarray,
+    quota: int,
+) -> List[AnchorPoint]:
+    """Phase 2+: Ridge / scarp anchor extraction.
+
+    Detects linear high-gradient features (ridges, scarps) using morphological
+    top-hat filtering and non-maximum suppression along the gradient direction.
+
+    Args:
+        image: Single-channel float32 image normalised to [0, 1].
+        gradient_map: Pre-computed Sobel gradient magnitude map.
+        quota: Target number of anchors from this bucket.
+
+    Returns:
+        List of AnchorPoint objects with feature_class="ridge".
+    """
+    h, w = image.shape[:2]
+    img_u8 = np.clip(image * 255, 0, 255).astype(np.uint8)
+
+    # Morphological top-hat to enhance linear features (ridges)
+    kernel_line = cv2.getStructuringElement(cv2.MORPH_RECT, (1, 15))
+    top_hat = cv2.morphologyEx(img_u8, cv2.MORPH_TOPHAT, kernel_line)
+    kernel_line_h = cv2.getStructuringElement(cv2.MORPH_RECT, (15, 1))
+    top_hat_h = cv2.morphologyEx(img_u8, cv2.MORPH_TOPHAT, kernel_line_h)
+    ridge_response = cv2.addWeighted(top_hat, 0.5, top_hat_h, 0.5, 0).astype(np.float32)
+
+    # Threshold and find ridge candidate pixels
+    thresh = float(np.percentile(ridge_response, 85))
+    ridge_mask = ridge_response > thresh
+
+    # Extract candidate pixels from mask
+    ys, xs = np.where(ridge_mask)
+    if len(xs) == 0:
+        logger.debug("_extract_ridges: no ridge pixels found, bucket empty.")
+        return []
+
+    # Sort by gradient magnitude descending and take top quota candidates
+    grads = gradient_map[ys, xs].astype(np.float64)
+    order = np.argsort(grads)[::-1]
+    xs, ys = xs[order], ys[order]
+
+    anchors: List[AnchorPoint] = []
+    used_positions = []
+    min_spacing = 20.0  # px
+    for x, y in zip(xs.tolist(), ys.tolist()):
+        if len(anchors) >= quota:
+            break
+        # Simple spacing check (O(n*quota) — acceptable for small quota)
+        too_close = any(
+            np.hypot(x - px, y - py) < min_spacing
+            for px, py in used_positions
+        )
+        if too_close:
+            continue
+        grad = float(gradient_map[int(y), int(x)])
+        anchors.append(AnchorPoint(
+            id=-1, src_x=float(x), src_y=float(y),
+            feature_class="ridge", gradient_magnitude=grad,
+        ))
+        used_positions.append((x, y))
+
+    logger.debug("_extract_ridges: found %d anchors (quota=%d)", len(anchors), quota)
+    return anchors
+
+
+def _extract_maria(
+    image: np.ndarray,
+    gradient_map: np.ndarray,
+    quota: int,
+    rng: np.random.Generator,
+) -> List[AnchorPoint]:
+    """Phase 2+: Flat-textured maria region anchor extraction.
+
+    Maria are relatively flat, low-reflectance plains. Anchors are sampled
+    from low-gradient regions to stress-test matchers on featureless terrain.
+    Uses inverse-gradient-weighted random sampling.
+
+    Args:
+        image: Single-channel float32 image normalised to [0, 1].
+        gradient_map: Pre-computed Sobel gradient magnitude map.
+        quota: Target number of anchors from this bucket.
+        rng: NumPy random generator.
+
+    Returns:
+        List of AnchorPoint objects with feature_class="maria".
+    """
+    h, w = image.shape[:2]
+
+    # Maria = low gradient (bottom 40th percentile)
+    grad_threshold = float(np.percentile(gradient_map, 40))
+    maria_mask = gradient_map <= grad_threshold
+
+    ys, xs = np.where(maria_mask)
+    if len(xs) == 0:
+        logger.debug("_extract_maria: no maria pixels found, bucket empty.")
+        return []
+
+    # Sample uniformly from maria pixels
+    n_sample = min(quota * 5, len(xs))
+    indices = rng.choice(len(xs), size=n_sample, replace=False)
+    sample_xs, sample_ys = xs[indices], ys[indices]
+
+    anchors: List[AnchorPoint] = []
+    used_positions = []
+    min_spacing = 25.0
+    for x, y in zip(sample_xs.tolist(), sample_ys.tolist()):
+        if len(anchors) >= quota:
+            break
+        too_close = any(
+            np.hypot(x - px, y - py) < min_spacing
+            for px, py in used_positions
+        )
+        if too_close:
+            continue
+        grad = float(gradient_map[int(y), int(x)])
+        anchors.append(AnchorPoint(
+            id=-1, src_x=float(x), src_y=float(y),
+            feature_class="maria", gradient_magnitude=grad,
+        ))
+        used_positions.append((x, y))
+
+    logger.debug("_extract_maria: found %d anchors (quota=%d)", len(anchors), quota)
+    return anchors
+
+
+def _extract_shadow_boundaries(
+    image: np.ndarray,
+    gradient_map: np.ndarray,
+    quota: int,
+) -> List[AnchorPoint]:
+    """Phase 2+: Solar terminator / shadow boundary anchor extraction.
+
+    Finds the sharp transition between illuminated and shadowed terrain by
+    thresholding on low intensity + high gradient (the boundary edge).
+
+    Args:
+        image: Single-channel float32 image normalised to [0, 1].
+        gradient_map: Pre-computed Sobel gradient magnitude map.
+        quota: Target number of anchors from this bucket.
+
+    Returns:
+        List of AnchorPoint objects with feature_class="shadow_boundary".
+    """
+    h, w = image.shape[:2]
+
+    # Shadow boundary = dark pixel neighbourhood with high gradient
+    # Dark: bottom 20th percentile intensity
+    dark_thresh = float(np.percentile(image, 20))
+    dark_mask = image < dark_thresh
+
+    # Dilate dark mask to find boundary
+    kernel = np.ones((5, 5), np.uint8)
+    boundary_mask = cv2.dilate(dark_mask.astype(np.uint8), kernel, iterations=1).astype(bool)
+    boundary_mask = boundary_mask & (~dark_mask)  # bright side of shadow edge
+
+    # Weight by gradient magnitude at boundary
+    high_grad_thresh = float(np.percentile(gradient_map[boundary_mask], 70)) if boundary_mask.any() else 0
+    final_mask = boundary_mask & (gradient_map > high_grad_thresh)
+
+    ys, xs = np.where(final_mask)
+    if len(xs) == 0:
+        # Fallback: just use high-gradient pixels
+        grad_thresh_fallback = float(np.percentile(gradient_map, 80))
+        ys, xs = np.where(gradient_map > grad_thresh_fallback)
+        if len(xs) == 0:
+            logger.debug("_extract_shadow_boundaries: no boundary pixels found.")
+            return []
+
+    grads = gradient_map[ys, xs]
+    order = np.argsort(grads)[::-1]
+    xs, ys = xs[order], ys[order]
+
+    anchors: List[AnchorPoint] = []
+    used_positions = []
+    min_spacing = 20.0
+    for x, y in zip(xs.tolist(), ys.tolist()):
+        if len(anchors) >= quota:
+            break
+        too_close = any(
+            np.hypot(x - px, y - py) < min_spacing
+            for px, py in used_positions
+        )
+        if too_close:
+            continue
+        grad = float(gradient_map[int(y), int(x)])
+        anchors.append(AnchorPoint(
+            id=-1, src_x=float(x), src_y=float(y),
+            feature_class="shadow_boundary", gradient_magnitude=grad,
+        ))
+        used_positions.append((x, y))
+
+    logger.debug("_extract_shadow_boundaries: found %d anchors (quota=%d)", len(anchors), quota)
+    return anchors
+
+
+def _extract_polar_terrain(
+    image: np.ndarray,
+    gradient_map: np.ndarray,
+    quota: int,
+    rng: np.random.Generator,
+    n_stripes: int = 4,
+) -> List[AnchorPoint]:
+    """Phase 2+: High-incidence-angle polar terrain anchor extraction.
+
+    Polar regions exhibit high-contrast illumination gradients due to extreme
+    solar incidence angles. Models this by focusing on horizontal stripe regions
+    with high gradient variance (simulating polar illumination patterns).
+
+    Args:
+        image: Single-channel float32 image normalised to [0, 1].
+        gradient_map: Pre-computed Sobel gradient magnitude map.
+        quota: Target number of anchors from this bucket.
+        rng: NumPy random generator.
+        n_stripes: Number of horizontal stripes to sample from.
+
+    Returns:
+        List of AnchorPoint objects with feature_class="polar".
+    """
+    h, w = image.shape[:2]
+    stripe_h = h // n_stripes
+
+    all_candidates: List[Tuple[float, float, float]] = []  # (grad, x, y)
+
+    # Collect high-gradient candidates from each horizontal stripe
+    for i in range(n_stripes):
+        y0, y1 = i * stripe_h, min((i + 1) * stripe_h, h)
+        stripe_grad = gradient_map[y0:y1, :]
+        # Select above 75th percentile within this stripe
+        thresh = float(np.percentile(stripe_grad, 75))
+        local_ys, local_xs = np.where(stripe_grad > thresh)
+        for lx, ly in zip(local_xs.tolist(), local_ys.tolist()):
+            g = float(gradient_map[y0 + ly, lx])
+            all_candidates.append((g, float(lx), float(y0 + ly)))
+
+    if not all_candidates:
+        logger.debug("_extract_polar_terrain: no polar candidates found.")
+        return []
+
+    # Sort by gradient descending
+    all_candidates.sort(key=lambda t: t[0], reverse=True)
+
+    anchors: List[AnchorPoint] = []
+    used_positions = []
+    min_spacing = 20.0
+    for grad, x, y in all_candidates:
+        if len(anchors) >= quota:
+            break
+        too_close = any(
+            np.hypot(x - px, y - py) < min_spacing
+            for px, py in used_positions
+        )
+        if too_close:
+            continue
+        anchors.append(AnchorPoint(
+            id=-1, src_x=x, src_y=y,
+            feature_class="polar", gradient_magnitude=grad,
+        ))
+        used_positions.append((x, y))
+
+    logger.debug("_extract_polar_terrain: found %d anchors (quota=%d)", len(anchors), quota)
+    return anchors
+
+
 def _deduplicate_anchors(
     anchors: List[AnchorPoint],
     min_spacing_px: float,
@@ -189,9 +527,14 @@ def extract_anchors(
     """Extract GT anchor points from a source image.
 
     Phase 1 (config.anchors.phase == 1): Shi-Tomasi grid extraction.
-    Phase 2+ (config.anchors.phase >= 2): TODO — morphological stratification
-        with separate detection per feature class bucket (craters, ridges,
-        maria, shadow_boundaries, polar_terrain, high_gradient_terrain).
+    Phase 2+ (config.anchors.phase >= 2): Stratified morphological extraction
+        with separate detection per feature class bucket:
+          - Shi-Tomasi (high-gradient terrain): 35% of target_count
+          - Craters:          20% of target_count
+          - Ridges:           10% of target_count
+          - Maria:            15% of target_count
+          - Shadow boundaries:10% of target_count
+          - Polar terrain:    10% of target_count
 
     Args:
         image: Source image array, single-channel, float32 or uint8.
@@ -200,13 +543,16 @@ def extract_anchors(
         rng: Optional NumPy random generator for reproducibility.
 
     Returns:
-        AnchorSet with up to config.anchors.target_count anchors.
+        AnchorSet with up to config.anchors.max_count anchors.
 
     Raises:
         RuntimeError: If fewer than config.anchors.min_count anchors are found.
     """
     assert image.ndim == 2, "extract_anchors expects a single-channel 2D image."
     assert image.size > 0, "Image must be non-empty."
+
+    if rng is None:
+        rng = np.random.default_rng(42)
 
     cfg_a = config.get("anchors", {})
     target_count: int = cfg_a.get("target_count", 80)
@@ -216,6 +562,7 @@ def extract_anchors(
     grid_cells = tuple(grid_cells_cfg)  # (n_rows, n_cols)
     phase: int = cfg_a.get("phase", 1)
     st_cfg = cfg_a.get("shi_tomasi", {})
+    buckets_cfg = cfg_a.get("stratification_buckets", {})
 
     gradient_map = _build_gradient_map(image)
 
@@ -223,7 +570,7 @@ def extract_anchors(
 
     if phase >= 1:
         # Phase 1: Shi-Tomasi grid extraction
-        anchors = _extract_shi_tomasi_grid(
+        st_anchors = _extract_shi_tomasi_grid(
             image=image,
             grid_cells=grid_cells,
             max_corners_per_cell=st_cfg.get("max_corners_per_cell", 20),
@@ -232,19 +579,60 @@ def extract_anchors(
             block_size=st_cfg.get("block_size", 7),
             gradient_map=gradient_map,
         )
+        anchors.extend(st_anchors)
 
     if phase >= 2:
-        # Phase 2+: Morphological stratification (scaffold — full implementation
-        # requires individual detector per feature class bucket).
-        # buckets = cfg_a.get("stratification_buckets", {})
-        # anchors += _extract_craters(image, quota=buckets.get("craters", 0.20) * target_count)
-        # anchors += _extract_ridges(image, quota=...)
-        # ... etc.
-        logger.warning(
-            "Morphological stratification (phase >= 2) is not yet implemented. "
-            "Using Phase 1 Shi-Tomasi extraction only. "
-            "See docs/SYNTHETIC_BENCHMARK_ARCHITECTURE.md §4.1."
+        # Phase 2+: Morphological stratification.
+        # Each bucket quota is computed as a fraction of target_count.
+        # The Shi-Tomasi pool above is still used as high-gradient-terrain.
+        # We REPLACE (not supplement) based on quotas — de-dup handles overlap.
+
+        # High-gradient terrain quota (shi_tomasi bucket)
+        hg_frac = float(buckets_cfg.get("high_gradient_terrain", 0.35))
+        crater_frac = float(buckets_cfg.get("craters", 0.20))
+        ridge_frac = float(buckets_cfg.get("ridges", 0.10))
+        maria_frac = float(buckets_cfg.get("maria", 0.15))
+        shadow_frac = float(buckets_cfg.get("shadow_boundaries", 0.10))
+        polar_frac = float(buckets_cfg.get("polar_terrain", 0.10))
+
+        hg_quota = max(1, int(np.ceil(target_count * hg_frac)))
+        crater_quota = max(1, int(np.ceil(target_count * crater_frac)))
+        ridge_quota = max(1, int(np.ceil(target_count * ridge_frac)))
+        maria_quota = max(1, int(np.ceil(target_count * maria_frac)))
+        shadow_quota = max(1, int(np.ceil(target_count * shadow_frac)))
+        polar_quota = max(1, int(np.ceil(target_count * polar_frac)))
+
+        # High-gradient terrain: use top anchors from Phase 1 Shi-Tomasi pool
+        hg_anchors = sorted(
+            st_anchors, key=lambda a: a.gradient_magnitude, reverse=True
+        )[:hg_quota]
+
+        crater_anchors = _extract_craters(image, gradient_map, crater_quota, rng)
+        ridge_anchors = _extract_ridges(image, gradient_map, ridge_quota)
+        maria_anchors = _extract_maria(image, gradient_map, maria_quota, rng)
+        shadow_anchors = _extract_shadow_boundaries(image, gradient_map, shadow_quota)
+        polar_anchors = _extract_polar_terrain(image, gradient_map, polar_quota, rng)
+
+        # Combine stratified buckets (Shi-Tomasi is the HG-terrain bucket)
+        anchors = (
+            hg_anchors
+            + crater_anchors
+            + ridge_anchors
+            + maria_anchors
+            + shadow_anchors
+            + polar_anchors
         )
+
+        # If any bucket failed and we're below min_count, pad with remaining
+        # Shi-Tomasi anchors (graceful degradation).
+        if len(anchors) < min_count:
+            remaining = [a for a in st_anchors if a not in hg_anchors]
+            anchors += remaining
+            logger.warning(
+                "Phase 2+ stratified extraction yielded only %d anchors for pair '%s'; "
+                "padded with %d Shi-Tomasi anchors.",
+                len(anchors) - len(remaining), pair_id, len(remaining),
+            )
 
     # De-duplicate and trim
     min_spacing = st_cfg.get("min_distance_px", 15)
