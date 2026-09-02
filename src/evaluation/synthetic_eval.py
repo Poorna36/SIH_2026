@@ -212,6 +212,8 @@ def score_l2_raw(
     Returns:
         StageScorecard for L2.
     """
+    assert gt_tgt_pts.shape[-1] == 2, "Expected (N,2) array: (col, row)"
+    assert raw_pred_tgt_pts.shape[-1] == 2, "Expected (N,2) array: (col, row)"
     assign = assign_gt_predictions(gt_tgt_pts, raw_pred_tgt_pts, max_dist_px)
     recall = assign.n_matched / assign.n_gt if assign.n_gt > 0 else 0.0
     raw_rmse = float(np.sqrt(np.mean(assign.distances ** 2))) if assign.n_matched > 0 else float("nan")

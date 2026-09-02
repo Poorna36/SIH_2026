@@ -319,8 +319,8 @@ def model_ladder(
 
         if fitted_models:
             max_inliers = max(m.inlier_count for m in fitted_models)
-            # Accept simplest model that explains >= 75% of max inliers with RMSE <= stop_on_rmse_below
-            candidates = [m for m in fitted_models if m.inlier_count >= 0.75 * max_inliers and m.rmse_px <= stop_on_rmse_below]
+            # Accept simplest model that explains >= 90% of max inliers with RMSE <= stop_on_rmse_below
+            candidates = [m for m in fitted_models if m.inlier_count >= 0.90 * max_inliers and m.rmse_px <= stop_on_rmse_below]
             if candidates:
                 best = min(candidates, key=lambda m: m.ladder_level)
                 break

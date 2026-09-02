@@ -223,7 +223,7 @@ def _write_markdown_summary(
     key_metrics = {
         "L2":   [("gt_recall", "GT Recall", ".3f"), ("raw_rmse_px", "Raw RMSE (px)", ".4f")],
         "L3":   [("gt_survival_rate", "GT Survival Rate", ".3f"), ("fp_pruning_rate", "FP Pruning Rate", ".3f")],
-        "L4":   [("inlier_precision", "Inlier Precision", ".3f"), ("inlier_recall", "Inlier Recall", ".3f"), ("pre_refinement_rmse_px", "Pre-Refine RMSE (px)", ".4f")],
+        "L4":   [("model_rmse_px", "Model RMSE (px)", ".4f"), ("model_pct_lt_0p5px", "% < 0.5px", ".1f"), ("inlier_precision", "Inlier Precision", ".3f"), ("inlier_recall", "Inlier Recall", ".3f")],
         "L5":   [("refinement_gain_px", "Refinement Gain (px)", "+.4f"), ("pct_improved", "% Improved", ".3f"), ("pct_lt_0p5px", "% < 0.5px", ".3f")],
         "L1.5": [("routing_correct", "Routing Correct", ".3f")],
     }

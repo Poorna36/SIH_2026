@@ -177,6 +177,17 @@ def _load_refined_matches(results_dir: Path, pair_id: str, matcher: str) -> Opti
             data = json.load(f)
         coarse = data.get("coarse_ref_xy", [])
         refined = data.get("refined_ref_xy", [])
+        if (not coarse or not refined) and "matches" in data:
+            coarse_list = []
+            refined_list = []
+            for m in data["matches"]:
+                c_xy = m.get("ref_xy", [0.0, 0.0])
+                delta = m.get("refined_delta", [0.0, 0.0])
+                coarse_list.append(c_xy)
+                refined_list.append([c_xy[0] + delta[0], c_xy[1] + delta[1]])
+            coarse = coarse_list
+            refined = refined_list
+
         if not coarse or not refined or len(coarse) != len(refined):
             return None
         return (
@@ -309,6 +320,16 @@ def evaluate_pair(
                     matcher=matcher,
                     max_dist_px=max_dist_px,
                 )
+                if geometry and "model_matrix" in geometry and len(src_pts_gt) > 0:
+                    H = np.array(geometry["model_matrix"], dtype=np.float64)
+                    pts_h = np.hstack([src_pts_gt, np.ones((len(src_pts_gt), 1))])
+                    proj = (H @ pts_h.T).T
+                    denom = np.maximum(np.abs(proj[:, 2:3]), 1e-12) * np.sign(proj[:, 2:3] + 1e-15)
+                    pred_tgt = proj[:, :2] / denom
+                    res_proj = np.linalg.norm(pred_tgt - tgt_pts_gt, axis=1)
+                    l4_scorecard.metrics["model_rmse_px"] = float(np.sqrt(np.mean(res_proj ** 2)))
+                    l4_scorecard.metrics["model_pct_lt_1px"] = float(np.mean(res_proj < 1.0) * 100.0)
+                    l4_scorecard.metrics["model_pct_lt_0p5px"] = float(np.mean(res_proj < 0.5) * 100.0)
                 result.scorecards.append(l4_scorecard)
 
         # --- L5: Sub-pixel refinement ---
@@ -334,7 +355,7 @@ def evaluate_pair(
         inlier_ratio = 0.0
         spatial_cov = 0.0
         if l4_scorecard:
-            gt_rmse = l4_scorecard.metrics.get("pre_refinement_rmse_px", float("nan"))
+            gt_rmse = l4_scorecard.metrics.get("model_rmse_px", l4_scorecard.metrics.get("pre_refinement_rmse_px", float("nan")))
             inlier_ratio = l4_scorecard.metrics.get("inlier_precision", 0.0)
         if geometry:
             spatial_cov = geometry.get("spatial_coverage", 0.0)

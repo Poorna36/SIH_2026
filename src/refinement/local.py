@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 WINDOW_PX: int = 32
 PYRAMID_LEVELS: int = 3
-SHARPNESS_THRESHOLD: float = 0.15   # tau_q — TUNE on pilot pairs
+SHARPNESS_THRESHOLD: float = 0.10   # tau_q — tuned for lunar regolith cross-correlation
 SECOND_PEAK_RATIO: float = 0.80     # reject if 2nd peak > 0.80 × primary
 VARIANCE_THRESHOLD: float = 1e-4    # tau_v — flat patch rejection
 APODIZATION: Literal["tukey", "gaussian"] = "tukey"

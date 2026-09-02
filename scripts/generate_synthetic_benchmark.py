@@ -99,11 +99,15 @@ def _hash_config(cfg: dict) -> str:
     ).hexdigest()[:12]
 
 
-def _find_source_images(images_dir: Path, extensions: Tuple[str, ...] = (".tif", ".img", ".png", ".fits")) -> List[Path]:
+def _find_source_images(images_dir: Path, extensions: Tuple[str, ...] = (".tif", ".img", ".png", ".fits", ".tiff", ".TIF", ".IMG", ".PNG", ".TIFF")) -> List[Path]:
     """Recursively find candidate source images."""
     found = []
+    seen = set()
     for ext in extensions:
-        found.extend(sorted(images_dir.rglob(f"*{ext}")))
+        for p in sorted(images_dir.rglob(f"*{ext}")):
+            if p not in seen:
+                seen.add(p)
+                found.append(p)
     return found
 
 
@@ -111,14 +115,25 @@ def _load_image(path: Path) -> Optional[np.ndarray]:
     """Load an image as a single-channel float32 array normalised to [0, 1].
 
     Supports .tif (via rasterio), .png/.jpg (via cv2), generic binary (.img).
+    Automatically crops very large satellite strips to a 2048x2048 window to
+    stay within OpenCV's SHRT_MAX (32767) limit.
     Returns None on failure (logged as warning).
     """
     try:
         # Try rasterio first (preferred for GeoTIFF / scientific formats)
         try:
             import rasterio
+            from rasterio.windows import Window
             with rasterio.open(path) as ds:
-                data = ds.read(1).astype(np.float32)
+                h, w = ds.shape
+                if h > 4096 or w > 4096:
+                    max_dim = 2048
+                    r0 = (h - max_dim) // 2 if h > max_dim else 0
+                    c0 = (w - max_dim) // 2 if w > max_dim else 0
+                    win = Window(c0, r0, min(w, max_dim), min(h, max_dim))
+                    data = ds.read(1, window=win).astype(np.float32)
+                else:
+                    data = ds.read(1).astype(np.float32)
                 vmin, vmax = float(np.nanmin(data)), float(np.nanmax(data))
                 if vmax > vmin:
                     data = (data - vmin) / (vmax - vmin)
@@ -131,6 +146,14 @@ def _load_image(path: Path) -> Optional[np.ndarray]:
         # Fallback: OpenCV
         img = cv2.imread(str(path), cv2.IMREAD_GRAYSCALE)
         if img is not None:
+            if img.shape[0] > 4096 or img.shape[1] > 4096:
+                max_dim = 2048
+                r0 = (img.shape[0] - max_dim) // 2 if img.shape[0] > max_dim else 0
+                c0 = (img.shape[1] - max_dim) // 2 if img.shape[1] > max_dim else 0
+                img = img[r0 : r0 + max_dim, c0 : c0 + max_dim]
+            vmin, vmax = float(np.nanmin(img)), float(np.nanmax(img))
+            if vmax > vmin:
+                return (img.astype(np.float32) - vmin) / (vmax - vmin)
             return img.astype(np.float32) / 255.0
 
         logger.warning("Could not load image: %s", path)
@@ -208,11 +231,23 @@ def _write_gt_json(
 
 
 def _append_manifest(manifest_path: Path, record: dict) -> None:
-    """Atomically append one record to the JSONL manifest."""
+    """Atomically append or update one record in the JSONL manifest."""
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
-    line = json.dumps(record, default=str) + "\n"
-    with open(manifest_path, "a") as f:
-        f.write(line)
+    existing = []
+    if manifest_path.exists():
+        with open(manifest_path, "r") as f:
+            for line in f:
+                if line.strip():
+                    try:
+                        d = json.loads(line)
+                        if d.get("pair_id") != record.get("pair_id"):
+                            existing.append(line.strip())
+                    except Exception:
+                        existing.append(line.strip())
+    existing.append(json.dumps(record, default=str))
+    with open(manifest_path, "w") as f:
+        for l in existing:
+            f.write(l + "\n")
 
 
 def _append_failure(failures_path: Path, pair_id: str, stage: str, reason: str) -> None:
