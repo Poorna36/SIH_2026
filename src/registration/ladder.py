@@ -353,7 +353,7 @@ def model_ladder(
             t_gsd=t_gsd_used,
             ref_gsd_m=ref_gsd_m,
         )
-        if tw_result is not None:
+        if tw_result is not None and (best is None or tw_result.inlier_count >= best.inlier_count):
             best = tw_result
             best.t_gsd_used = t_gsd_used
 
