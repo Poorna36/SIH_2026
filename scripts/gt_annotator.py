@@ -34,7 +34,6 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.matching.sift import SIFTMatcher
-from src.refinement.local import refine_match
 
 logging.basicConfig(format="[%(asctime)s %(levelname)s] %(message)s", level=logging.INFO)
 logger = logging.getLogger("gt_annotator")
@@ -128,9 +127,16 @@ def main():
 
     # Load synthetic or real images
     if args.src and Path(args.src).exists():
-        import cv2
-        src_img = cv2.imread(args.src, cv2.IMREAD_GRAYSCALE).astype(np.float32) / 255.0
-        ref_img = cv2.imread(args.ref, cv2.IMREAD_GRAYSCALE).astype(np.float32) / 255.0
+        try:
+            import rasterio
+            with rasterio.open(args.src) as ds:
+                src_img = ds.read(1).astype(np.float32)
+            with rasterio.open(args.ref) as ds:
+                ref_img = ds.read(1).astype(np.float32)
+        except Exception:
+            import cv2
+            src_img = cv2.imread(args.src, cv2.IMREAD_GRAYSCALE).astype(np.float32) / 255.0
+            ref_img = cv2.imread(args.ref, cv2.IMREAD_GRAYSCALE).astype(np.float32) / 255.0
     else:
         # Generate dummy 1024x1024 synthetic images for initialization
         src_img = np.random.uniform(0, 1, (1024, 1024)).astype(np.float32)

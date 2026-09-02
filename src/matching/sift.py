@@ -59,6 +59,8 @@ class SIFTMatcher(BaseMatcher):
         src: np.ndarray,
         ref: np.ndarray,
         gsd_ratio: float = 1.0,
+        mask_src: Optional[np.ndarray] = None,
+        mask_ref: Optional[np.ndarray] = None,
         **kwargs: Any,
     ) -> MatchResult:
         """
@@ -69,7 +71,7 @@ class SIFTMatcher(BaseMatcher):
         """
         t0 = time.time()
         try:
-            return self._match_impl(src, ref, gsd_ratio)
+            return self._match_impl(src, ref, gsd_ratio, mask_src=mask_src, mask_ref=mask_ref)
         except Exception as exc:
             return self._empty_result(
                 runtime_s=time.time() - t0,
@@ -83,6 +85,8 @@ class SIFTMatcher(BaseMatcher):
         src: np.ndarray,
         ref: np.ndarray,
         gsd_ratio: float,
+        mask_src: Optional[np.ndarray] = None,
+        mask_ref: Optional[np.ndarray] = None,
     ) -> MatchResult:
         import cv2
 
@@ -93,9 +97,13 @@ class SIFTMatcher(BaseMatcher):
 
         sift = cv2.SIFT_create(nfeatures=0)   # detect all, ANMS will cull
 
+        # Prepare uint8 masks (255 = valid, 0 = invalid)
+        m_src = (mask_src > 0).astype(np.uint8) * 255 if mask_src is not None else None
+        m_ref = (mask_ref > 0).astype(np.uint8) * 255 if mask_ref is not None else None
+
         # ── Detect ────────────────────────────────────────────────────────────
-        kp_src = sift.detect(src_gray, None)
-        kp_ref = sift.detect(ref_gray, None)
+        kp_src = sift.detect(src_gray, m_src)
+        kp_ref = sift.detect(ref_gray, m_ref)
 
         if not kp_src or not kp_ref:
             return self._empty_result(

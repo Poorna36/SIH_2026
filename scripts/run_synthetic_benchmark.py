@@ -424,23 +424,43 @@ def main(argv: Optional[List[str]] = None) -> int:
             logger.error("No synthetic manifest at %s — cannot run benchmark.", manifest_path)
             return 3
 
+        matchers_yaml = Path("configs/matchers.yaml")
+        if not matchers_yaml.exists():
+            matchers_yaml = Path("configs/matchers_sift.yaml")
+
         bench_cmd = [
             sys.executable, str(_HERE / "benchmark.py"),
             "--manifest", str(manifest_path),
-            "--matchers", *args.matchers,
+            "--matchers", str(matchers_yaml),
             "--out", str(args.pipeline_results),
             "--mode", "benchmark",
+            "--splits", "train",
         ]
         if args.force:
             bench_cmd.append("--force")
         if args.verbose:
             bench_cmd.append("-v")
 
-        rc = _run_script(bench_cmd, "STEP 2: benchmark.py")
+        rc = _run_script(bench_cmd, "STEP 2: benchmark.py (S4/S5)")
         if rc >= 2:
             logger.error("Benchmark failed critically (exit=%d).", rc)
             overall_exit = max(overall_exit, 1)
         elif rc == 1:
+            overall_exit = 1
+
+        # Run S6 + S7: Geometric verification and sub-pixel refinement
+        s6_s7_cmd = [
+            sys.executable, str(_HERE / "run_s6_s7.py"),
+            "--manifest", str(manifest_path),
+            "--results", str(args.pipeline_results),
+            "--data-dir", str(args.synthetic_dir),
+            "--matchers", *args.matchers,
+        ]
+        rc_s6 = _run_script(s6_s7_cmd, "STEP 2.5: run_s6_s7.py (S6/S7)")
+        if rc_s6 >= 2:
+            logger.error("S6/S7 failed critically (exit=%d).", rc_s6)
+            overall_exit = max(overall_exit, 1)
+        elif rc_s6 == 1:
             overall_exit = 1
 
     # -------------------------------------------------------------------------

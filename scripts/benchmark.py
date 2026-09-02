@@ -332,6 +332,17 @@ def _run_pair_matcher(
 
     # ── Run matcher (GPU matchers serialized via lock file) ───────────────────
     match_kwargs: dict = {}
+    # Check for preprocessed shadow/valid mask
+    mask_path = Path("data/processed") / pair_id / "valid_mask.png"
+    if mask_path.exists():
+        try:
+            import cv2
+            mask_arr = cv2.imread(str(mask_path), cv2.IMREAD_GRAYSCALE)
+            if mask_arr is not None:
+                match_kwargs["mask_src"] = mask_arr
+        except Exception:
+            pass
+
     if mid in ("crater", "crater_hough"):
         match_kwargs = {
             "crater_density_src": float(pair.get("crater_density_per_km2", 0.0)),

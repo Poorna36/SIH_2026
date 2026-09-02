@@ -41,6 +41,7 @@ def shadow_mask(
     local_variance_window: int = 15,
     flat_variance_threshold: float = 10.0,
     dark_k: float = 2.0,
+    dilate_boundary_px: int = 0,
 ) -> np.ndarray:
     """
     Compute a boolean invalid-pixel mask for a single-band lunar image.
@@ -118,6 +119,16 @@ def shadow_mask(
     # Combine: any test fires → pixel is invalid
     # ------------------------------------------------------------------ #
     combined = dark_mask | flat_mask | incidence_mask
+
+    # ------------------------------------------------------------------ #
+    # Stage 4 — Optional penumbra boundary dilation
+    # ------------------------------------------------------------------ #
+    if dilate_boundary_px > 0:
+        kernel = cv2.getStructuringElement(
+            cv2.MORPH_ELLIPSE,
+            (2 * dilate_boundary_px + 1, 2 * dilate_boundary_px + 1),
+        )
+        combined = cv2.dilate(combined.astype(np.uint8), kernel).astype(bool)
 
     logger.debug(
         "shadow_mask: dark=%.1f%% flat=%.1f%% incidence=%.1f%% total=%.1f%%",

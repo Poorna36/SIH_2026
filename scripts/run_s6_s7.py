@@ -82,8 +82,10 @@ def run_pair_matcher(pair, matcher_id, results_dir, data_dir):
         return {"pair_id": pair_id, "matcher": matcher_id,
                 "status": "skipped_no_selection"}
 
-    src_tif = data_dir / pair_id / "src.tif"
-    ref_tif = data_dir / pair_id / "ref.tif"
+    src_path_str = pair.get("src_processed") or pair.get("source_image")
+    ref_path_str = pair.get("ref_processed") or pair.get("synthetic_image")
+    src_tif = Path(src_path_str) if src_path_str else (data_dir / pair_id / "src.tif")
+    ref_tif = Path(ref_path_str) if ref_path_str else (data_dir / pair_id / "ref.tif")
     if not (src_tif.exists() and ref_tif.exists()):
         return {"pair_id": pair_id, "matcher": matcher_id,
                 "status": "skipped_no_images"}
