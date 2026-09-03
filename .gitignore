@@ -9,6 +9,8 @@ pristine_dataset/
 real_dataset/
 chandrayaan2_dataset/
 chandrayaan2_dataset_all/
+dataset/
+.config/
 !results/
 
 # Model weights and runs

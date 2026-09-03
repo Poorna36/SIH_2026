@@ -1,0 +1,6 @@
+Metric,Value,Percentage
+Precision,0.6892,68.92%
+Recall,0.6632,66.32%
+F1-Score,0.6760,67.60%
+mAP@50,0.6043,60.43%
+mAP@50-95,0.3210,32.10%
