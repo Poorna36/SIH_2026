@@ -11,13 +11,15 @@
   },
   "dependencies": {
     "@types/recharts": "^1.8.29",
+    "@types/three": "^0.185.4",
     "cesium": "^1.144.0",
     "framer-motion": "^13.1.1",
     "lucide-react": "^1.37.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "recharts": "^3.10.1",
-    "resium": "^1.25.0"
+    "resium": "^1.25.0",
+    "three": "^0.185.1"
   },
   "devDependencies": {
     "@types/node": "^24.13.3",

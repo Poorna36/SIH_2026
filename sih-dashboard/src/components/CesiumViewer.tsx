@@ -6,7 +6,7 @@ import {
   Crosshair, Scan, Radio
 } from 'lucide-react';
 import type { ScenePreset, LayerVisibility, CraterDetail } from '../types';
-import { CRATER_DETAILS, SCENE_PRESETS } from '../data/mockData';
+import { getCraterCatalog } from '../services/api';
 export type StarDimmerMode = 'cinematic' | 'deep' | 'subtle' | 'off';
 
 Cesium.Ion.defaultAccessToken = import.meta.env.VITE_CESIUM_ION_TOKEN || '';
@@ -17,6 +17,8 @@ interface CesiumViewerProps {
   onLayerChange: (layers: LayerVisibility) => void;
   onSelectScene?: (scene: ScenePreset) => void;
   hideControls?: boolean;
+  hudVisible?: boolean;
+  craters?: CraterDetail[];
 }
 
 interface LayerConfig {
@@ -174,7 +176,47 @@ export const CesiumViewer: React.FC<CesiumViewerProps> = ({
   onLayerChange,
   onSelectScene,
   hideControls = false,
+  hudVisible = true,
+  craters: initialCraters = [],
 }) => {
+  const [allCraters, setAllCraters] = useState<CraterDetail[]>(initialCraters);
+
+  useEffect(() => {
+    if (initialCraters && initialCraters.length > 0) {
+      setAllCraters(initialCraters);
+      return;
+    }
+    getCraterCatalog().then((res) => {
+      if (res && res.length > 0) {
+        setAllCraters(
+          res.map((c) => ({
+            id: c.id,
+            name: c.name,
+            lat: c.lat,
+            lon: c.lon,
+            height: c.height,
+            diameterKm: c.diameter_km,
+            depthKm: c.depth_km,
+            region: c.region,
+            floorInclinationDeg: c.floor_inclination_deg,
+            wallSlopeDeg: c.wall_slope_deg,
+            orbitInclinationDeg: c.orbit_inclination_deg,
+            solarIncidenceDeg: c.solar_incidence_deg,
+            solarAzimuthDeg: c.solar_azimuth_deg,
+            waterAbsorptionDepthPct: c.water_absorption_depth_pct,
+            waterIceConcentrationWtPct: c.water_ice_concentration_wt_pct,
+            waterIcePpm: c.water_ice_ppm,
+            psrStatus: c.psr_status as any,
+            subsurfaceHydrationLevel: c.subsurface_hydration_level as any,
+            surfaceTempKelvin: c.surface_temp_kelvin,
+            frostIndex: c.frost_index,
+            spectrometerBand: c.spectrometer_band,
+            description: c.description,
+          }))
+        );
+      }
+    });
+  }, [initialCraters]);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const viewerRef = useRef<Cesium.Viewer | null>(null);
   const ohrcLayerRef = useRef<Cesium.ImageryLayer | null>(null);
@@ -509,7 +551,7 @@ export const CesiumViewer: React.FC<CesiumViewerProps> = ({
 
       // ── 3. Add Interactive 3D Markers & Landing Targets for All Lunar Craters ──
       const createdEntities: Cesium.Entity[] = [];
-      CRATER_DETAILS.forEach((crater) => {
+      allCraters.forEach((crater) => {
         const isSelected = crater.id === selectedScene.id;
         const craterEntity = viewer.entities.add({
           id: `crater_${crater.id}`,
@@ -584,7 +626,7 @@ export const CesiumViewer: React.FC<CesiumViewerProps> = ({
           const entityId = String(pickedObject.id.id || '');
           if (entityId.startsWith('crater_')) {
             const craterId = entityId.replace('crater_', '');
-            const foundCrater = CRATER_DETAILS.find((c) => c.id === craterId);
+            const foundCrater = allCraters.find((c) => c.id === craterId);
             if (foundCrater) {
               // Use ref so we always call the latest rotateToCrater, never a stale closure
               rotateToCraterRef.current(foundCrater, 'recon');
@@ -605,7 +647,7 @@ export const CesiumViewer: React.FC<CesiumViewerProps> = ({
             // Only select if user clicked within tight proximity (<= 3.5°) of an actual verified crater marker
             let closestCrater: CraterDetail | null = null;
             let minDist = 3.5;
-            for (const c of CRATER_DETAILS) {
+            for (const c of allCraters) {
               const dist = Math.hypot(c.lat - latDeg, c.lon - lonDeg);
               if (dist < minDist) {
                 minDist = dist;
@@ -620,32 +662,14 @@ export const CesiumViewer: React.FC<CesiumViewerProps> = ({
         }
       }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
 
-      // ── Initial Cinematic Revolution Entrance: Revolve slowly and stop exactly at Near Side ──
+      // ── Canonical Near Side Alignment (Seamless 1:1 match with landing page 3D Moon) ──
       viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY);
-      // Start camera over the western limb (-85° Longitude)
       viewer.camera.setView({
-        destination: Cesium.Cartesian3.fromDegrees(-85, 0, 5_000_000, MOON_ELLIPSOID),
-        orientation: {
-          heading: 0,
-          pitch: -Cesium.Math.PI_OVER_TWO,
-          roll: 0,
-        },
-      });
-
-      // Slowly and smoothly revolve into the iconic Near Side position and stop exactly here
-      viewer.camera.flyTo({
         destination: Cesium.Cartesian3.fromDegrees(0, 0, 4_600_000, MOON_ELLIPSOID),
         orientation: {
           heading: 0,
           pitch: -Cesium.Math.PI_OVER_TWO,
           roll: 0,
-        },
-        duration: 3.8,
-        easingFunction: Cesium.EasingFunction.QUADRATIC_OUT,
-        complete: () => {
-          if (viewer && !viewer.isDestroyed()) {
-            viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY);
-          }
         },
       });
 
@@ -914,21 +938,21 @@ export const CesiumViewer: React.FC<CesiumViewerProps> = ({
 
   const handleApplyCraterAsScene = () => {
     if (!selectedCrater || !onSelectScene) return;
-    const matchedPreset = SCENE_PRESETS.find((p) => p.id === selectedCrater.id) || {
+    const matchedPreset: ScenePreset = {
       id: selectedCrater.id,
       name: selectedCrater.name,
       lat: selectedCrater.lat,
       lon: selectedCrater.lon,
-      height: selectedCrater.height,
+      height: selectedCrater.height || 80000,
       terrainClass: selectedCrater.lat < -60 ? 'polar_highland' : 'highland',
-      craterDensity: parseFloat((3.0 + Math.random() * 2).toFixed(1)),
+      craterDensity: 4.5,
       solarIncidenceDeg: selectedCrater.solarIncidenceDeg,
       solarAzimuthDeg: selectedCrater.solarAzimuthDeg,
       gsdM: 0.31,
       overlayOpacity: 0.75,
       description: selectedCrater.description,
     };
-    onSelectScene(matchedPreset as ScenePreset);
+    onSelectScene(matchedPreset);
   };
 
   return (
@@ -941,7 +965,9 @@ export const CesiumViewer: React.FC<CesiumViewerProps> = ({
     >
       {/* ── UNIFIED TOP FLOATING CONTROL BAR (Zero Overlap & Multi-Recon Modes) ── */}
       {!hideControls && (
-        <div className="absolute top-2.5 left-2.5 right-2.5 z-20 flex items-center justify-between gap-2 pointer-events-auto">
+        <div className={`absolute top-2.5 left-2.5 right-2.5 z-20 flex items-center justify-between gap-2 pointer-events-auto transition-all duration-700 ease-out transform ${
+          hudVisible ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-4 pointer-events-none'
+        }`}>
         {/* Left: Terrain Draping Layer Toggle & Star Dimmer */}
         <div className="flex items-center gap-1.5">
           <div className="relative">
@@ -1014,12 +1040,12 @@ export const CesiumViewer: React.FC<CesiumViewerProps> = ({
             <div className="absolute top-full mt-1.5 left-0 z-40 bg-[#07080A]/95 backdrop-blur-2xl rounded-2xl border border-[#D4C59A]/40 p-2 flex flex-col gap-1 shadow-2xl min-w-[260px] max-h-80 overflow-y-auto sidebar-scroll">
               <div className="flex items-center justify-between px-1.5 pb-1 mb-1 border-b border-[#D4C59A]/20">
                 <span className="text-[9px] font-mono text-[#D4C59A] font-extrabold uppercase tracking-wider">
-                  Lunar Landing Targets ({CRATER_DETAILS.length})
+                  Lunar Landing Targets ({allCraters.length})
                 </span>
                 <span className="text-[8px] font-mono text-slate-400">3D Recon Sites</span>
               </div>
 
-              {CRATER_DETAILS.map((crater) => {
+              {allCraters.map((crater) => {
                 const isTarget = selectedCrater?.id === crater.id;
                 return (
                   <button
@@ -1060,7 +1086,7 @@ export const CesiumViewer: React.FC<CesiumViewerProps> = ({
           {/* Recon Modes: 160km Survey / Global */}
           <div className="bg-[#0D0E12]/95 backdrop-blur-xl rounded-xl border border-[#D4C59A]/25 p-0.5 flex items-center gap-0.5 shadow-lg">
             <button
-              onClick={() => rotateToCrater(selectedCrater || CRATER_DETAILS[0], 'survey')}
+              onClick={() => rotateToCrater(selectedCrater || allCraters[0], 'survey')}
               title="160km Orbital Survey"
               className={`px-2 py-1 rounded-lg text-[9px] font-mono font-extrabold transition-all ${
                 reconMode === 'survey'
@@ -1386,13 +1412,15 @@ export const CesiumViewer: React.FC<CesiumViewerProps> = ({
 
       {/* Floating Bottom-Right Controls: Crater Findings Pill + Zoom & Reset Navigation */}
       {!hideControls && (
-        <div className="absolute bottom-10 right-3 z-30 flex items-center gap-2 pointer-events-auto">
+        <div className={`absolute bottom-10 right-3 z-30 flex items-center gap-2 pointer-events-auto transition-all duration-700 ease-out transform ${
+          hudVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4 pointer-events-none'
+        }`}>
         {!showInspector && (
           <button
             onClick={() => setShowInspector(true)}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#0D0E12]/95 hover:bg-[#181B24] border border-[#D4C59A]/40 hover:border-[#D4C59A] text-[#D4C59A] hover:text-white font-mono text-[10px] font-bold shadow-2xl backdrop-blur-2xl transition-all group"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-black/40 hover:bg-black/60 backdrop-blur-xl border border-[#D4C59A]/30 text-[10px] font-mono text-white shadow-xl transition-all group"
           >
-            <Droplets size={12} className="text-[#D4C59A] animate-pulse" />
+            <Droplets size={12} className="text-[#D4C59A] group-hover:scale-110 transition-transform" />
             <span>{selectedCrater ? `${selectedCrater.name} Findings` : 'Crater Findings'}</span>
             <span className="text-[8px] font-mono px-1.5 py-0.5 rounded bg-[#1C1A14] text-[#D4C59A] border border-[#D4C59A]/30">
               {selectedCrater ? `${selectedCrater.waterAbsorptionDepthPct}% H₂O` : 'Inspect'}
@@ -1436,7 +1464,9 @@ export const CesiumViewer: React.FC<CesiumViewerProps> = ({
 
       {/* Floating Viewport Footer Telemetry Bar */}
       {!hideControls && (
-        <div className="absolute bottom-2 left-2 right-2 z-20 flex items-center justify-between px-3 py-1.5 bg-[#0D0E12]/90 backdrop-blur-xl rounded-xl border border-[#D4C59A]/20 text-[9.5px] font-mono text-white shadow-xl pointer-events-auto">
+        <div className={`absolute bottom-2 left-2 right-2 z-20 flex items-center justify-between px-3 py-1.5 bg-[#0D0E12]/90 backdrop-blur-xl rounded-xl border border-[#D4C59A]/20 text-[9.5px] font-mono text-white shadow-xl pointer-events-auto transition-all duration-700 ease-out transform ${
+          hudVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4 pointer-events-none'
+        }`}>
         <span className="flex items-center gap-1.5">
           <Compass size={12} className="text-[#D4C59A]" />
           <span className="font-bold">Target: {selectedScene.lat.toFixed(2)}°S, {selectedScene.lon.toFixed(2)}°E</span>

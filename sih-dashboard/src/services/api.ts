@@ -129,7 +129,7 @@ export interface PipelineResult {
 }
 
 export interface MatcherConfig {
-  enabled: boolean;
+  enabled?: boolean;
   [key: string]: unknown;
 }
 
@@ -263,6 +263,14 @@ export async function getMatchersConfig(): Promise<MatchersConfig | null> {
   return apiFetch<MatchersConfig>('/api/config/matchers');
 }
 
+/** Update and persist matcher configuration */
+export async function updateMatchersConfig(config: MatchersConfig): Promise<Record<string, unknown> | null> {
+  return apiFetch<Record<string, unknown>>('/api/config/matchers', {
+    method: 'POST',
+    body: JSON.stringify(config),
+  });
+}
+
 /** Get all configs merged */
 export async function getAllConfigs(): Promise<Record<string, unknown> | null> {
   return apiFetch<Record<string, unknown>>('/api/config/all');
@@ -288,7 +296,8 @@ export async function getKeypointMatches(pairId: string): Promise<BackendKeypoin
   return apiFetch<BackendKeypointMatch[]>(`/api/science/keypoints/${encodeURIComponent(pairId)}`);
 }
 
-/** Get full lunar crater catalog */
-export async function getCraterCatalog(): Promise<BackendCraterDetail[] | null> {
-  return apiFetch<BackendCraterDetail[]>('/api/science/craters/');
+/** Get full lunar crater catalog, optionally with search query */
+export async function getCraterCatalog(query?: string): Promise<BackendCraterDetail[] | null> {
+  const url = query && query.trim() ? `/api/science/craters/?q=${encodeURIComponent(query.trim())}` : '/api/science/craters/';
+  return apiFetch<BackendCraterDetail[]>(url);
 }

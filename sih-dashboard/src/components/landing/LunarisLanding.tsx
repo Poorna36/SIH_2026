@@ -9,11 +9,15 @@ import { TechnicalDossierModal } from './TechnicalDossierModal';
 
 interface LunarisLandingProps {
   onLaunchWorkbench: () => void;
+  isLaunching?: boolean;
 }
 
 export type LandingSection = 'overview' | 'pipeline' | 'sensors' | 'science' | 'team';
 
-export const LunarisLanding: React.FC<LunarisLandingProps> = ({ onLaunchWorkbench }) => {
+export const LunarisLanding: React.FC<LunarisLandingProps> = ({
+  onLaunchWorkbench,
+  isLaunching = false,
+}) => {
   const [currentPage, setCurrentPage] = useState<LandingSection>('overview');
   const [isDossierOpen, setIsDossierOpen] = useState(false);
 
@@ -22,13 +26,17 @@ export const LunarisLanding: React.FC<LunarisLandingProps> = ({ onLaunchWorkbenc
     window.scrollTo({ top: 0, left: 0, behavior: 'smooth' });
   };
 
+  const handleLaunch = () => {
+    onLaunchWorkbench();
+  };
+
   return (
-    <div className="min-h-screen w-full bg-[#07090C] text-[#E7E3D9] flex flex-col relative overflow-x-hidden selection:bg-[#D6C38B]/20 selection:text-[#D6C38B]">
+    <div className="min-h-screen w-full bg-transparent text-[#E7E3D9] flex flex-col relative overflow-x-hidden selection:bg-[#0071E3]/30 selection:text-white">
       {/* Fixed Editorial Navigation */}
       <Navbar
         activeSection={currentPage}
         onNavigate={navigateToPage}
-        onLaunchWorkbench={onLaunchWorkbench}
+        onLaunchWorkbench={handleLaunch}
         onOpenDossier={() => setIsDossierOpen(true)}
       />
 
@@ -37,7 +45,8 @@ export const LunarisLanding: React.FC<LunarisLandingProps> = ({ onLaunchWorkbenc
         {currentPage === 'overview' && (
           <Hero
             onNext={() => navigateToPage('pipeline')}
-            onLaunchWorkbench={onLaunchWorkbench}
+            onLaunchWorkbench={handleLaunch}
+            isLaunching={isLaunching}
           />
         )}
 
