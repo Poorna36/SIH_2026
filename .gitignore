@@ -15,7 +15,10 @@ chandrayaan2_dataset_all/
 runs/
 models/*.pt
 *.pt
-!models/crater_yolov9.pt
+*.pth
+*.onnx
+*.engine
+*.weights
 
 # IDE / OS files
 .vscode/
