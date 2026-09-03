@@ -1,12 +1,15 @@
 import React from 'react';
-import { Satellite, Cpu, Clock, Activity, ChevronRight } from 'lucide-react';
-import { useMissionClock } from '../hooks/useMissionClock';
+import { Activity, Wifi, WifiOff, RefreshCw } from 'lucide-react';
 import { PipelineStage } from '../types';
 import { PIPELINE_STAGE_LABELS } from '../data/mockData';
 
 interface HeaderProps {
   activeStage: PipelineStage;
-  selectedScene: string;
+  selectedScene?: string;
+  isBackendOnline?: boolean;
+  backendLatencyMs?: number | null;
+  onRefreshBackend?: () => void;
+  onBackToLanding?: () => void;
 }
 
 const STAGE_ORDER = [
@@ -18,8 +21,13 @@ const STAGE_ORDER = [
   PipelineStage.Done,
 ];
 
-export const Header: React.FC<HeaderProps> = ({ activeStage, selectedScene }) => {
-  const utc = useMissionClock();
+export const Header: React.FC<HeaderProps> = ({
+  activeStage,
+  isBackendOnline = false,
+  backendLatencyMs = null,
+  onRefreshBackend,
+  onBackToLanding,
+}) => {
   const isRunning = activeStage !== PipelineStage.Idle && activeStage !== PipelineStage.Done;
   const isDone = activeStage === PipelineStage.Done;
 
@@ -27,65 +35,84 @@ export const Header: React.FC<HeaderProps> = ({ activeStage, selectedScene }) =>
   const progressPct = isDone ? 100 : (stageIndex / (STAGE_ORDER.length - 1)) * 100;
 
   return (
-    <header className="fixed top-0 left-0 right-0 z-50 h-11 border-b border-emerald-500/25 bg-[#02050A]/95 backdrop-blur-2xl flex items-center px-3 gap-3 shadow-[0_4px_25px_rgba(0,0,0,0.9)]">
-      {/* Logo / Mission ID */}
-      <div className="flex items-center gap-2 min-w-max">
-        <div className="p-1 rounded-lg bg-emerald-500/15 border border-emerald-400/40 text-emerald-400">
-          <Satellite size={13} className="animate-pulse text-emerald-400" />
-        </div>
-        <span className="font-mono text-xs font-extrabold text-emerald-400 tracking-wider uppercase">SIH26166</span>
-        <ChevronRight size={12} className="text-slate-600" />
-        <span className="text-slate-100 text-[11px] font-bold tracking-tight">Chandrayaan-2 Co-Registration Workbench</span>
-      </div>
+    <header className="fixed top-0 left-0 right-0 z-50 h-8 border-b border-[#D4C59A]/20 bg-[#07080A]/95 backdrop-blur-2xl flex items-center justify-between px-3 shadow-[0_4px_25px_rgba(0,0,0,0.9)]">
+      {/* Return to Landing Page Button */}
+      {onBackToLanding ? (
+        <button
+          onClick={onBackToLanding}
+          className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-[#141620] hover:bg-[#1E2230] text-[#D4C59A] hover:text-white border border-[#D4C59A]/30 text-[9px] font-mono font-bold tracking-wider transition-all cursor-pointer shadow-sm shrink-0"
+          title="Return to LUNARIS Landing Page"
+        >
+          <span>⟵ LANDING PAGE</span>
+        </button>
+      ) : (
+        <div className="w-20" />
+      )}
 
       {/* Pipeline Progress Indicator */}
-      <div className="flex-1 mx-2">
-        <div className="flex items-center justify-between mb-0.5">
-          <div className="flex items-center gap-1.5">
-            <span className={`text-[9px] font-mono font-extrabold tracking-wider uppercase ${
-              isDone ? 'text-emerald-400' : isRunning ? 'text-cyan-300' : 'text-slate-400'
-            }`}>
-              PIPELINE: {PIPELINE_STAGE_LABELS[activeStage]}
-            </span>
-            {isRunning && (
-              <Activity size={10} className="text-cyan-300 animate-pulse" />
-            )}
-          </div>
-          <span className="text-[9px] font-mono font-bold text-emerald-300">{progressPct.toFixed(0)}%</span>
+      <div className="w-full max-w-2xl mx-auto flex items-center gap-3">
+        <div className="flex items-center gap-1.5 min-w-max">
+          <span className={`text-[10px] font-mono font-extrabold tracking-wider uppercase ${
+            isDone ? 'text-[#D4C59A]' : isRunning ? 'text-[#EBE2CD]' : 'text-slate-400'
+          }`}>
+            PIPELINE: {PIPELINE_STAGE_LABELS[activeStage]}
+          </span>
+          {isRunning && (
+            <Activity size={11} className="text-[#D4C59A] animate-pulse" />
+          )}
         </div>
-        <div className="h-1 bg-black/80 rounded-full overflow-hidden border border-emerald-500/25">
+
+        <div className="flex-1 h-1.5 bg-black/80 rounded-full overflow-hidden border border-[#D4C59A]/20">
           <div
             className="h-full rounded-full transition-all duration-700"
             style={{
               width: `${progressPct}%`,
               background: isDone
-                ? 'linear-gradient(90deg, #10B981, #38BDF8)'
+                ? 'linear-gradient(90deg, #D4C59A, #EBE2CD, #4ADE80)'
                 : isRunning
-                ? 'linear-gradient(90deg, #34D399, #38BDF8, #A7F3D0)'
-                : '#1E293B',
-              boxShadow: isRunning ? '0 0 10px #34D399' : 'none',
+                ? 'linear-gradient(90deg, #D4C59A, #4ADE80, #FAF6EB)'
+                : '#1A1D24',
+              boxShadow: isRunning ? '0 0 10px rgba(212,197,154,0.6)' : 'none',
             }}
           />
         </div>
+
+        <span className="text-[10px] font-mono font-bold text-[#D4C59A] min-w-max">{progressPct.toFixed(0)}%</span>
       </div>
 
-      {/* Scene Target Badge */}
-      <div className="hidden lg:flex items-center gap-1.5 px-2 py-0.5 bg-[#081220]/80 rounded-lg border border-emerald-500/30 backdrop-blur-md">
-        <span className="text-[8px] text-cyan-300 font-mono font-extrabold uppercase tracking-widest">TARGET</span>
-        <span className="text-[10px] text-slate-100 font-mono font-semibold">{selectedScene || '—'}</span>
-      </div>
+      {/* Right Side: Live Backend API Connection Status */}
+      <div className="flex items-center gap-2 shrink-0">
+        <div
+          title={isBackendOnline ? `FastAPI Server Connected (port 8000) · ${backendLatencyMs ? `${backendLatencyMs}ms` : 'online'}` : 'Backend Offline · Running in Standalone Mock Mode'}
+          className={`flex items-center gap-1.5 px-2 py-0.5 rounded-lg border text-[8.5px] font-mono font-bold transition-all ${
+            isBackendOnline
+              ? 'bg-[#0B1A12] border-emerald-500/40 text-emerald-400 shadow-[0_0_8px_rgba(16,185,129,0.2)]'
+              : 'bg-[#1C1710] border-amber-500/30 text-amber-300'
+          }`}
+        >
+          {isBackendOnline ? (
+            <>
+              <Wifi size={10} className="text-emerald-400 animate-pulse" />
+              <span>API LIVE</span>
+              {backendLatencyMs && <span className="text-[7.5px] opacity-75">{backendLatencyMs}ms</span>}
+            </>
+          ) : (
+            <>
+              <WifiOff size={10} className="text-amber-400" />
+              <span>OFFLINE (MOCK)</span>
+            </>
+          )}
 
-      {/* Hardware Accelerator Badge */}
-      <div className="flex items-center gap-1.5 px-2 py-0.5 bg-[#06140D]/80 rounded-lg border border-emerald-400/40">
-        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-        <Cpu size={11} className="text-emerald-400" />
-        <span className="text-[9px] font-mono text-emerald-300 font-bold">CUDA 12.3</span>
-      </div>
-
-      {/* Live UTC Mission Clock */}
-      <div className="flex items-center gap-1 px-2 py-0.5 bg-black/80 rounded-lg border border-emerald-500/30 min-w-max">
-        <Clock size={11} className="text-emerald-400" />
-        <span className="font-mono text-[10px] font-bold text-slate-200">{utc.replace('GMT', 'UTC').split(' ').slice(1, 5).join(' ')}</span>
+          {onRefreshBackend && (
+            <button
+              onClick={onRefreshBackend}
+              title="Ping & Reconnect Backend API"
+              className="ml-1 hover:text-white transition-transform active:rotate-180"
+            >
+              <RefreshCw size={9} />
+            </button>
+          )}
+        </div>
       </div>
     </header>
   );

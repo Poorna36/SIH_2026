@@ -474,12 +474,12 @@ export const TELEMETRY_BY_SCENE: Record<string, TelemetryData> = {
 };
 
 // ──────────────────────────────────────────────────────────────
-// 250-band IIRS Spectral Curve (0.8 – 5.0 µm)
+// 256-band IIRS Spectral Curve (0.8 – 5.0 µm)
 // Modelled with genuine 3.0 µm OH/H₂O absorption trough
 // ──────────────────────────────────────────────────────────────
 function generateSpectralCurve(): { wavelength: number; reflectance: number }[] {
   const points: { wavelength: number; reflectance: number }[] = [];
-  const bandCount = 250;
+  const bandCount = 256;
   const wlMin = 0.8;
   const wlMax = 5.0;
 

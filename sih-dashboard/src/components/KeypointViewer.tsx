@@ -87,7 +87,7 @@ export const KeypointViewer: React.FC<KeypointViewerProps> = ({ onProbeCoord }) 
         ctx.bezierCurveTo(cpX1, cpY1, cpX2, cpY2, x2, y2);
 
         if (match.isInlier) {
-          ctx.strokeStyle = isHovered ? '#FFFFFF' : 'rgba(52, 211, 153, 0.9)';
+          ctx.strokeStyle = isHovered ? '#FFFFFF' : 'rgba(212, 197, 154, 0.9)';
           ctx.lineWidth = isHovered ? 2.5 : 1.5;
           ctx.setLineDash([]);
         } else {
@@ -100,7 +100,7 @@ export const KeypointViewer: React.FC<KeypointViewerProps> = ({ onProbeCoord }) 
         // Source keypoint circle
         ctx.beginPath();
         ctx.arc(x1, y1, isHovered ? 5.5 : 4, 0, 2 * Math.PI);
-        ctx.fillStyle = match.isInlier ? '#34D399' : '#EF4444';
+        ctx.fillStyle = match.isInlier ? '#D4C59A' : '#EF4444';
         ctx.fill();
         ctx.strokeStyle = '#FFFFFF';
         ctx.lineWidth = 1.5;
@@ -109,14 +109,13 @@ export const KeypointViewer: React.FC<KeypointViewerProps> = ({ onProbeCoord }) 
         // Reference keypoint circle
         ctx.beginPath();
         ctx.arc(x2, y2, isHovered ? 5.5 : 4, 0, 2 * Math.PI);
-        ctx.fillStyle = match.isInlier ? '#38BDF8' : '#EF4444';
+        ctx.fillStyle = match.isInlier ? '#EBE2CD' : '#EF4444';
         ctx.fill();
         ctx.strokeStyle = '#FFFFFF';
         ctx.lineWidth = 1.5;
         ctx.stroke();
       });
     } else if (viewMode === 'residuals') {
-      // F21 Residual Error Vector Heatmap Mode
       const scaleX = width / 512;
       const scaleY = height / 512;
 
@@ -126,16 +125,14 @@ export const KeypointViewer: React.FC<KeypointViewerProps> = ({ onProbeCoord }) 
 
         const x = match.srcXy[0] * scaleX;
         const y = match.srcXy[1] * scaleY;
-        const dx = (match.refXy[0] - match.srcXy[0]) * scaleX * 2.5; // magnified for clear QC visualization
+        const dx = (match.refXy[0] - match.srcXy[0]) * scaleX * 2.5;
         const dy = (match.refXy[1] - match.srcXy[1]) * scaleY * 2.5;
         const errPx = Math.sqrt((match.refXy[0] - match.srcXy[0])**2 + (match.refXy[1] - match.srcXy[1])**2);
 
-        // Color coding per F21 spec: green < 0.5px, yellow 0.5-1.0px, red > 1.0px
-        let color = '#34D399';
+        let color = '#D4C59A';
         if (errPx > 1.0 || !match.isInlier) color = '#EF4444';
         else if (errPx > 0.5) color = '#FBBF24';
 
-        // Draw residual error vector arrow
         ctx.beginPath();
         ctx.moveTo(x, y);
         ctx.lineTo(x + dx, y + dy);
@@ -144,7 +141,6 @@ export const KeypointViewer: React.FC<KeypointViewerProps> = ({ onProbeCoord }) 
         ctx.setLineDash([]);
         ctx.stroke();
 
-        // Arrow tip circle
         ctx.beginPath();
         ctx.arc(x, y, 4, 0, 2 * Math.PI);
         ctx.fillStyle = color;
@@ -166,7 +162,7 @@ export const KeypointViewer: React.FC<KeypointViewerProps> = ({ onProbeCoord }) 
 
         ctx.beginPath();
         ctx.arc(x1, y1, 4, 0, 2 * Math.PI);
-        ctx.fillStyle = match.isInlier ? '#34D399' : '#EF4444';
+        ctx.fillStyle = match.isInlier ? '#D4C59A' : '#EF4444';
         ctx.fill();
         ctx.strokeStyle = '#FFFFFF';
         ctx.lineWidth = 1.2;
@@ -184,20 +180,20 @@ export const KeypointViewer: React.FC<KeypointViewerProps> = ({ onProbeCoord }) 
   };
 
   return (
-    <div className="flex flex-col h-full bg-[#020408] rounded-xl overflow-hidden border border-emerald-500/25 shadow-2xl">
+    <div className="flex flex-col h-full bg-[#07080A] rounded-xl overflow-hidden border border-[#D4C59A]/20 shadow-2xl">
       {/* Top QC Toolbar */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-emerald-500/20 bg-[#050B14]/95 backdrop-blur-xl">
+      <div className="flex items-center justify-between px-3 py-2 border-b border-[#D4C59A]/20 bg-[#0D0E12]/95 backdrop-blur-xl">
         <div className="flex items-center gap-2.5">
           <div className="flex items-center gap-1.5">
-            <Layers size={13} className="text-emerald-400" />
-            <span className="text-[11px] font-mono font-extrabold text-slate-100">2D Co-Registration & Quality Control</span>
+            <Layers size={13} className="text-[#D4C59A]" />
+            <span className="text-[11px] font-mono font-extrabold text-white">2D Co-Registration & Quality Control</span>
           </div>
 
-          <div className="flex items-center gap-1.5 border-l border-emerald-500/30 pl-2.5">
+          <div className="flex items-center gap-1.5 border-l border-[#D4C59A]/25 pl-2.5">
             <button
               onClick={() => setShowInliers(!showInliers)}
               className={`flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-[9px] font-mono font-extrabold border transition-all ${
-                showInliers ? 'bg-emerald-500/25 text-emerald-300 border-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.3)]' : 'bg-[#040913]/70 text-slate-400 border-emerald-500/20'
+                showInliers ? 'bg-[#222018] text-[#D4C59A] border-[#D4C59A] shadow-[0_0_10px_rgba(212,197,154,0.3)]' : 'bg-[#090A0E] text-slate-400 border-[#D4C59A]/20'
               }`}
             >
               <CheckCircle size={10} />
@@ -207,7 +203,7 @@ export const KeypointViewer: React.FC<KeypointViewerProps> = ({ onProbeCoord }) 
             <button
               onClick={() => setShowOutliers(!showOutliers)}
               className={`flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-[9px] font-mono font-extrabold border transition-all ${
-                showOutliers ? 'bg-rose-950/90 text-rose-300 border-rose-500 shadow-[0_0_10px_rgba(239,68,68,0.3)]' : 'bg-[#040913]/70 text-slate-400 border-emerald-500/20'
+                showOutliers ? 'bg-rose-950/90 text-rose-300 border-rose-500 shadow-[0_0_10px_rgba(239,68,68,0.3)]' : 'bg-[#090A0E] text-slate-400 border-[#D4C59A]/20'
               }`}
             >
               <AlertTriangle size={10} />
@@ -216,21 +212,21 @@ export const KeypointViewer: React.FC<KeypointViewerProps> = ({ onProbeCoord }) 
           </div>
 
           {/* Scene Identity Match Pill */}
-          <div className="hidden lg:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-950/90 border border-emerald-400/60 shadow-[0_0_10px_rgba(52,211,153,0.2)]">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-            <span className="text-[9px] font-mono font-extrabold text-emerald-300">
+          <div className="hidden lg:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#1C1A14] border border-[#D4C59A]/50 shadow-[0_0_10px_rgba(212,197,154,0.2)]">
+            <span className="w-1.5 h-1.5 rounded-full bg-[#4ADE80] animate-pulse" />
+            <span className="text-[9px] font-mono font-extrabold text-[#D4C59A]">
               VERDICT: SAME CRATER VERIFIED (92.4% Match)
             </span>
           </div>
         </div>
 
-        {/* 4 Multi-Modal QC View Modes (F21 spec) */}
-        <div className="flex items-center gap-0.5 bg-[#02050A]/90 p-0.5 rounded-lg border border-emerald-500/25">
+        {/* 4 Multi-Modal QC View Modes */}
+        <div className="flex items-center gap-0.5 bg-[#090A0E] p-0.5 rounded-lg border border-[#D4C59A]/20">
           <button
             onClick={() => setViewMode('side-by-side')}
             title="Dual-Pane Side-by-Side Inlier Match Graph"
             className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-[9.5px] font-mono font-extrabold transition-all ${
-              viewMode === 'side-by-side' ? 'bg-gradient-to-r from-emerald-500 to-teal-400 text-black shadow-md' : 'text-slate-300 hover:text-white'
+              viewMode === 'side-by-side' ? 'bg-[#D4C59A] text-black shadow-md' : 'text-slate-300 hover:text-white'
             }`}
           >
             <Eye size={11} />
@@ -241,7 +237,7 @@ export const KeypointViewer: React.FC<KeypointViewerProps> = ({ onProbeCoord }) 
             onClick={() => setViewMode('split')}
             title="Swipe Comparison Wipe Slider"
             className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-[9.5px] font-mono font-extrabold transition-all ${
-              viewMode === 'split' ? 'bg-gradient-to-r from-emerald-500 to-teal-400 text-black shadow-md' : 'text-slate-300 hover:text-white'
+              viewMode === 'split' ? 'bg-[#D4C59A] text-black shadow-md' : 'text-slate-300 hover:text-white'
             }`}
           >
             <MoveHorizontal size={11} />
@@ -250,24 +246,24 @@ export const KeypointViewer: React.FC<KeypointViewerProps> = ({ onProbeCoord }) 
 
           <button
             onClick={() => setViewMode('checkerboard')}
-            title="F21: 64px Checkerboard Interleaving QC Alignment"
+            title="64px Checkerboard Interleaving QC Alignment"
             className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-[9.5px] font-mono font-extrabold transition-all ${
-              viewMode === 'checkerboard' ? 'bg-gradient-to-r from-emerald-500 to-teal-400 text-black shadow-md' : 'text-slate-300 hover:text-white'
+              viewMode === 'checkerboard' ? 'bg-[#D4C59A] text-black shadow-md' : 'text-slate-300 hover:text-white'
             }`}
           >
             <Grid3X3 size={11} />
-            <span>Checkerboard (F21)</span>
+            <span>Checkerboard</span>
           </button>
 
           <button
             onClick={() => setViewMode('residuals')}
-            title="F21: Residual Error Vectors & Colormap Heatmap"
+            title="Residual Error Vectors & Colormap Heatmap"
             className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-[9.5px] font-mono font-extrabold transition-all ${
-              viewMode === 'residuals' ? 'bg-gradient-to-r from-emerald-500 to-teal-400 text-black shadow-md' : 'text-slate-300 hover:text-white'
+              viewMode === 'residuals' ? 'bg-[#D4C59A] text-black shadow-md' : 'text-slate-300 hover:text-white'
             }`}
           >
             <Activity size={11} />
-            <span>Residuals (F21)</span>
+            <span>Residuals</span>
           </button>
         </div>
       </div>
@@ -284,31 +280,31 @@ export const KeypointViewer: React.FC<KeypointViewerProps> = ({ onProbeCoord }) 
         {viewMode === 'side-by-side' && (
           <div className="grid grid-cols-2 h-full w-full gap-2 p-2 relative">
             {/* Left: OHRC (0.3m) */}
-            <div className="relative rounded-xl overflow-hidden border border-emerald-500/25 bg-black shadow-2xl">
+            <div className="relative rounded-xl overflow-hidden border border-[#D4C59A]/25 bg-black shadow-2xl">
               <img
                 src="/assets/ohrc.jpg"
                 alt="ISRO OHRC Source"
                 className="w-full h-full object-cover contrast-125 brightness-105"
               />
-              <div className="absolute top-2 left-2 px-2.5 py-1 rounded-lg bg-[#030E08]/85 backdrop-blur-xl border border-emerald-400/60 shadow-lg">
-                <span className="text-[9px] font-mono text-emerald-300 font-extrabold">SOURCE: CH-2 OHRC (0.3m)</span>
+              <div className="absolute top-2 left-2 px-2.5 py-1 rounded-lg bg-[#0D0E12]/90 backdrop-blur-xl border border-[#D4C59A]/50 shadow-lg">
+                <span className="text-[9px] font-mono text-[#D4C59A] font-extrabold">SOURCE: CH-2 OHRC (0.3m)</span>
               </div>
-              <div className="absolute bottom-2 left-2 text-[9px] font-mono text-white font-bold bg-black/80 px-2 py-0.5 rounded border border-emerald-500/30">
+              <div className="absolute bottom-2 left-2 text-[9px] font-mono text-white font-bold bg-black/80 px-2 py-0.5 rounded border border-[#D4C59A]/30">
                 2048 x 512 px · Inc: 68.2°
               </div>
             </div>
 
             {/* Right: Warped IIRS / Reference */}
-            <div className="relative rounded-xl overflow-hidden border border-emerald-500/25 bg-black shadow-2xl">
+            <div className="relative rounded-xl overflow-hidden border border-[#D4C59A]/25 bg-black shadow-2xl">
               <img
                 src="/assets/iirs.jpg"
                 alt="ISRO IIRS Warped"
                 className="w-full h-full object-cover brightness-110 contrast-110"
               />
-              <div className="absolute top-2 left-2 px-2.5 py-1 rounded-lg bg-[#040913]/90 backdrop-blur-xl border border-cyan-400/60 shadow-lg">
-                <span className="text-[9px] font-mono text-cyan-300 font-extrabold">WARPED: CH-2 IIRS (3.0µm)</span>
+              <div className="absolute top-2 left-2 px-2.5 py-1 rounded-lg bg-[#0D0E12]/90 backdrop-blur-xl border border-[#D4C59A]/50 shadow-lg">
+                <span className="text-[9px] font-mono text-[#EBE2CD] font-extrabold">WARPED: CH-2 IIRS (3.0µm)</span>
               </div>
-              <div className="absolute bottom-2 left-2 text-[9px] font-mono text-white font-bold bg-black/80 px-2 py-0.5 rounded border border-emerald-500/30">
+              <div className="absolute bottom-2 left-2 text-[9px] font-mono text-white font-bold bg-black/80 px-2 py-0.5 rounded border border-[#D4C59A]/30">
                 250 Bands · Resampled 80m → 0.3m
               </div>
             </div>
@@ -323,8 +319,8 @@ export const KeypointViewer: React.FC<KeypointViewerProps> = ({ onProbeCoord }) 
               alt="Reference Layer"
               className="absolute inset-0 w-full h-full object-cover"
             />
-            <div className="absolute top-2 right-2 px-2.5 py-1 rounded-lg bg-[#040913]/90 border border-cyan-400/60 shadow-lg">
-              <span className="text-[9px] font-mono text-cyan-300 font-extrabold">WARPED IIRS (3.0µm)</span>
+            <div className="absolute top-2 right-2 px-2.5 py-1 rounded-lg bg-[#0D0E12]/90 border border-[#D4C59A]/50 shadow-lg">
+              <span className="text-[9px] font-mono text-[#EBE2CD] font-extrabold">WARPED IIRS (3.0µm)</span>
             </div>
 
             {/* Clipped top layer: OHRC */}
@@ -338,18 +334,18 @@ export const KeypointViewer: React.FC<KeypointViewerProps> = ({ onProbeCoord }) 
                 className="absolute top-0 left-0 h-full object-cover contrast-125"
                 style={{ width: containerRef.current?.clientWidth || '100%', maxWidth: 'none' }}
               />
-              <div className="absolute top-2 left-2 px-2.5 py-1 rounded-lg bg-[#040913]/90 border border-emerald-400/60 shadow-lg">
-                <span className="text-[9px] font-mono text-emerald-300 font-extrabold">SOURCE OHRC (0.3m)</span>
+              <div className="absolute top-2 left-2 px-2.5 py-1 rounded-lg bg-[#0D0E12]/90 border border-[#D4C59A]/50 shadow-lg">
+                <span className="text-[9px] font-mono text-[#D4C59A] font-extrabold">SOURCE OHRC (0.3m)</span>
               </div>
             </div>
 
             {/* Slider Divider Line & Thumb */}
             <div
               onMouseDown={handleMouseDown}
-              className="absolute top-0 bottom-0 w-1 bg-gradient-to-b from-emerald-400 via-white to-cyan-400 cursor-ew-resize shadow-[0_0_15px_#38BDF8]"
+              className="absolute top-0 bottom-0 w-1 bg-gradient-to-b from-[#D4C59A] via-white to-[#D4C59A] cursor-ew-resize shadow-[0_0_15px_rgba(212,197,154,0.8)]"
               style={{ left: `${sliderPos}%` }}
             >
-              <div className="absolute top-1/2 -translate-y-1/2 -left-3.5 w-7 h-7 rounded-full bg-gradient-to-tr from-emerald-500 to-teal-400 border-2 border-white flex items-center justify-center shadow-lg text-black text-xs font-extrabold">
+              <div className="absolute top-1/2 -translate-y-1/2 -left-3.5 w-7 h-7 rounded-full bg-[#D4C59A] border-2 border-white flex items-center justify-center shadow-lg text-black text-xs font-extrabold">
                 ↔
               </div>
             </div>
@@ -357,15 +353,12 @@ export const KeypointViewer: React.FC<KeypointViewerProps> = ({ onProbeCoord }) 
         )}
 
         {viewMode === 'checkerboard' && (
-          /* F21: 64px Checkerboard Interleaving Mode */
           <div className="relative w-full h-full bg-black">
-            {/* Background Warped IIRS */}
             <img
               src="/assets/iirs.jpg"
               alt="IIRS Warped Base"
               className="absolute inset-0 w-full h-full object-cover"
             />
-            {/* Foreground OHRC with 64px CSS Checkerboard Mask */}
             <img
               src="/assets/ohrc.jpg"
               alt="OHRC Checkerboard"
@@ -377,28 +370,27 @@ export const KeypointViewer: React.FC<KeypointViewerProps> = ({ onProbeCoord }) 
                 WebkitMaskSize: '64px 64px',
               }}
             />
-            <div className="absolute top-2 left-2 px-2.5 py-1 rounded-lg bg-[#040913]/90 border border-emerald-400/60 shadow-lg">
-              <span className="text-[9px] font-mono text-emerald-300 font-extrabold">F21 CHECKERBOARD (64px Alternating OHRC / IIRS)</span>
+            <div className="absolute top-2 left-2 px-2.5 py-1 rounded-lg bg-[#0D0E12]/90 border border-[#D4C59A]/50 shadow-lg">
+              <span className="text-[9px] font-mono text-[#D4C59A] font-extrabold">CHECKERBOARD (64px Alternating OHRC / IIRS)</span>
             </div>
           </div>
         )}
 
         {viewMode === 'residuals' && (
-          /* F21: Residual Error Vectors & Heatmap Mode */
           <div className="relative w-full h-full bg-black">
             <img
               src="/assets/ohrc.jpg"
               alt="OHRC Surface with Residuals"
               className="absolute inset-0 w-full h-full object-cover opacity-80"
             />
-            <div className="absolute top-2 left-2 px-2.5 py-1 rounded-lg bg-[#040913]/90 border border-emerald-400/60 shadow-lg flex items-center gap-2">
-              <span className="text-[9px] font-mono text-emerald-300 font-extrabold">F21 RESIDUAL ERROR VECTORS</span>
-              <span className="text-[8px] font-mono text-emerald-400 bg-emerald-950 px-1.5 py-0.5 rounded border border-emerald-500/40 flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block" />
+            <div className="absolute top-2 left-2 px-2.5 py-1 rounded-lg bg-[#0D0E12]/90 border border-[#D4C59A]/50 shadow-lg flex items-center gap-2">
+              <span className="text-[9px] font-mono text-[#D4C59A] font-extrabold">RESIDUAL ERROR VECTORS</span>
+              <span className="text-[8px] font-mono text-[#4ADE80] bg-[#182618] px-1.5 py-0.5 rounded border border-[#4ADE80]/40 flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#4ADE80] inline-block" />
                 <span>&lt;0.5px</span>
               </span>
-              <span className="text-[8px] font-mono text-amber-300 bg-amber-950 px-1.5 py-0.5 rounded border border-amber-500/40 flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 inline-block" />
+              <span className="text-[8px] font-mono text-[#FBBF24] bg-[#2A1D0C] px-1.5 py-0.5 rounded border border-[#FBBF24]/40 flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#FBBF24] inline-block" />
                 <span>0.5-1.0px</span>
               </span>
               <span className="text-[8px] font-mono text-rose-300 bg-rose-950 px-1.5 py-0.5 rounded border border-rose-500/40 flex items-center gap-1">
@@ -416,17 +408,17 @@ export const KeypointViewer: React.FC<KeypointViewerProps> = ({ onProbeCoord }) 
         />
 
         {/* Bottom Telemetry Strip */}
-        <div className="absolute bottom-2 left-2 right-2 px-3 py-1.5 rounded-lg bg-[#040913]/95 backdrop-blur-xl border border-emerald-500/30 flex items-center justify-between text-[10px] font-mono text-white shadow-2xl">
+        <div className="absolute bottom-2 left-2 right-2 px-3 py-1.5 rounded-lg bg-[#0D0E12]/95 backdrop-blur-xl border border-[#D4C59A]/30 flex items-center justify-between text-[10px] font-mono text-white shadow-2xl">
           <div className="flex items-center gap-2">
-            <Crosshair size={12} className="text-cyan-400 animate-pulse" />
+            <Crosshair size={12} className="text-[#D4C59A] animate-pulse" />
             <span className="text-slate-200 font-bold">Click image to probe 250-band IIRS reflectance signature</span>
           </div>
           <div className="flex items-center gap-2 font-extrabold">
-            <span className="text-emerald-400">Inliers: {inlierCount}/{KEYPOINT_MATCHES.length}</span>
-            <span className="text-emerald-700">|</span>
+            <span className="text-[#D4C59A]">Inliers: {inlierCount}/{KEYPOINT_MATCHES.length}</span>
+            <span className="text-[#A39062]">|</span>
             <span className="text-white">RMSE: 0.34 px</span>
-            <span className="text-emerald-700">|</span>
-            <span className="text-cyan-300">MAGSAC++: 10k iter</span>
+            <span className="text-[#A39062]">|</span>
+            <span className="text-[#EBE2CD]">MAGSAC++: 10k iter</span>
           </div>
         </div>
       </div>
