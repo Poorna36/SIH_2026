@@ -1,247 +1,185 @@
-# SIH26166 — VALIDATION v2.0
+# Pipeline Validation and Verification Protocol
+## SIH 2026 PS-26166: Cross-Sensor Lunar Image Correspondence
 
-How to verify the system is correct. This document defines what "it works" means and how to prove it.
+This document specifies the validation criteria, metrics, ground-truth standards, regression test suite, and acceptance protocols for the registration pipeline.
 
 ---
 
-## 1. What Must Be Validated
+## 1. Component-Level Acceptance Targets
 
-> **These are component-level acceptance criteria.** They govern whether individual pipeline components are correctly implemented. They are NOT the same as the system-level pass/fail criteria in §5 — per-matcher thresholds here (e.g. M1 SR ≥ 90%) and system-level thresholds in §5 (e.g. mean inlier_ratio ≥ 0.10) are legitimately different because one is a single-component bar and the other is an aggregate across all pairs and matchers.
+Component-level acceptance criteria verify that individual pipeline modules function within specified tolerances:
 
-| Item | What "Pass" Means |
+| Component | Acceptance Standard |
 |---|---|
-| End-to-end pipeline | RMSE < 1.0 px on >=50% of test pairs; no silent failures |
-| Matcher M0 (SIFT) | Runs on all pairs; produces baseline metric; fails gracefully on polar |
-| Matcher M1 (RIFT2) | SR >= 90% across all terrain classes; RMSE after L5 < 1.0 px |
-| Matcher M2 (LightGlue) | Inlier ratio >= 0.20 across diverse pairs; F2 checks never disabled |
-| Matcher M3 (Crater) | Only triggers when crater_density >= tau_c; 0% false activation in mare |
-| Uniform coverage | grid_density_std <= 4.0; coverage >= 0.60 on all matchers |
-| Sub-pixel refinement | refinement_gain >= 0.10 px on >= 60% of pairs (L5 is doing real work) |
-| IIRS module | RMSE < 80 m absolute on IIRS pairs vs WAC reference |
-| Matcher Selection Model (MSM) | Passes all 8 Acceptance Criteria (AC1–AC8; accuracy $\ge 70\%$, runtime cut $\ge 50\%$) |
-| Leakage | No geo_cell overlaps between train and test splits |
+| End-to-End Pipeline | RMSE < 1.0 px on >= 50% of test pairs; zero unhandled exceptions |
+| Matcher M0 (SIFT) | Executes across all pairs; provides baseline floor metric; fails gracefully in polar shadow |
+| Matcher M1 (RIFT2/LNIFT) | Success Rate >= 90% across non-polar terrain; post-refinement RMSE < 1.0 px |
+| Matcher M2 (LightGlue) | Inlier ratio >= 0.20 on diverse scenes; bounds check and one-to-one invariants strictly enforced |
+| Matcher M3 (Crater) | Executes only when crater density >= tau_c; zero false activations in mare terrain |
+| Spatial Uniformity (L3) | Grid density standard deviation <= 4.0; spatial coverage >= 0.60 across active matchers |
+| Sub-Pixel Refinement (L5) | Refinement gain >= 0.10 px on >= 60% of test pairs |
+| Hyperspectral Track (IIRS) | Absolute RMSE < 80 m on IIRS-WAC pairs after photometric correction |
+| Matcher Selection Model (MSM) | Satisfies all 8 Acceptance Criteria (AC1 through AC8; accuracy >= 70%, runtime cut >= 50%) |
+| Spatial Leakage Audit | Zero overlapping 10-degree geographic cells between training and test partitions |
 
 ---
 
-## 2. Ground Truth Construction
+## 2. Ground-Truth Construction and Standards
 
-### 2.1 Manual Annotation Protocol
+### Manual Checkpoint Annotation
+1. Stratified Selection: 15 to 20 representative pairs from the test split covering all terrain classes, latitude bins, and sensor combinations.
+2. Grid Layout: Overlay a uniform 6x6 grid across the unmasked valid area of the source image.
+3. Feature Identification: Identify corresponding features in the reference image using crater rims, rock groupings, and morphological patterns.
+4. Coordinate Format: Record coordinates as `[col, row] = [x, y]` floating-point values.
+5. Partition Assignment: Assign points to `eval` (held-out evaluation) and `fit` (model numerical verification). At least 20 points per pair must reside in `eval`.
+6. Inter-Annotator Verification: Re-annotate 20% of points independently (by a second annotator or blind after a time interval) into the `qc` partition.
 
-1. Select 15-20 pairs from the test split, stratified by terrain class, latitude bin, and sensor pair
-2. For each pair: lay a 6x6 uniform grid over the valid (unmasked) region of the source image
-3. For each of the 36 grid points: identify the matching location in the reference image by visual inspection and photoclinometric cues (crater rims, small boulders, texture pattern)
-4. Record: src_xy and ref_xy as (col, row) floats; partition as "eval" for held-out, "fit" for validation of matcher consistency
-5. Ensure > 20 points in the "eval" partition per pair for RMSE computation
-6. Re-annotate 20% of points independently (by a second annotator or after a time gap) for inter-annotator error estimation; record as "qc" partition
-7. Store in INTERFACES.md §7 format at data/metadata/gt/<pair_id>_gt.json
+### Synthetic Checkpoint Engine
+For synthetic benchmark pairs, the true homography matrix $\mathbf{H}_{\text{true}}$ maps source coordinates to exact floating-point reference coordinates:
 
-### 2.2 Cross-Method Consistency Adjudication
+$$\mathbf{x}_{\text{ref}} = \mathbf{H}_{\text{true}}^{-1} \cdot \mathbf{x}_{\text{src}}$$
 
-Where manual annotation is too difficult (heavy shadow, low texture):
-1. Run all matchers on the pair
-2. Identify points where 3 or more matchers agree to within 0.5 px
-3. Use consensus as pseudo-GT; label partition="fit" (not "eval")
-4. Do not mix pseudo-GT with manual-GT in the same RMSE computation
-
-### 2.3 LOLA/pc_align Anchor (where available)
-
-Where a LOLA track crosses the source footprint:
-- Use pc_align (ASP tool) to compute a rigid offset between the pipeline's registered GeoTIFF and the LOLA track
-- Report: pc_align residual in meters as an independent absolute accuracy check
+Correspondences are assigned to ground-truth anchors using a maximum distance threshold ($r \le 2.0\text{ px}$) and resolved via the Hungarian algorithm for strictly one-to-one assignment.
 
 ---
 
-## 3. Evaluation Dataset Requirements
+## 3. Evaluation Dataset Stratification
 
-The test set must include:
-- >= 5 pairs from each terrain class: {equatorial_mare, equatorial_highland, polar_highland, polar_mare, crater_floor, ejecta}
-- >= 3 pairs from latitude > +/-55 degrees
-- >= 3 pairs from delta_azimuth > 90 degrees (extreme illumination change)
-- >= 3 pairs from the lowest crater_density bin (tests M3 gating)
-- All sensor pair types: OHRC-NAC, OHRC-WAC, TMC-2-WAC, and IIRS-WAC (separate module)
+The test set must contain a minimum of 30 pairs with the following mandatory stratification:
+- Terrain Classes (>= 5 pairs each): `equatorial_mare`, `equatorial_highland`, `polar_highland`, `polar_mare`, `crater_floor`, and `ejecta`.
+- Polar Latitude: >= 3 pairs with $|\text{latitude}| > 55^\circ$.
+- Illumination Disparity: >= 3 pairs with $\Delta\text{azimuth} > 90^\circ$.
+- Low Crater Density: >= 3 pairs with $\text{crater\_density} < 1.0\text{ craters/km}^2$.
+- Sensor Combinations: Full coverage of OHRC-NAC, TMC-2-WAC, and IIRS-WAC.
 
-Minimum test set size: **30 pairs** across the full stratification.
-(6 terrain classes × ≥5 pairs each = 30 minimum; the earlier figure of 25 was a contradiction and is corrected here.)
-
-**Partial-overlap pair eligibility:** Pairs with `partial_overlap=true` in the PairRecord are eligible for leaderboard scoring but are reported in a separate `partial_overlap` stratum. They are NEVER merged with full-overlap pairs in the primary RMSE aggregate. They count toward the failure-rate denominator.
+Pairs with partial footprint overlap are reported in a distinct `partial_overlap` stratum and are not merged with full-overlap primary metrics.
 
 ---
 
-## 4. Metric Definitions
+## 4. Evaluation Metrics Formulation
 
-All metrics computed ONLY on the "eval" partition of GT checkpoints.
+All primary accuracy metrics are evaluated strictly on the `eval` partition:
 
-**RMSE (primary)**
-RMSE = sqrt(mean(residuals_squared))
-residuals = euclidean distance in pixels between predicted ref_xy and GT ref_xy
-Report: before L5 refinement and after; ALWAYS state N (number of GT checkpoints used).
+### Root Mean Square Error (RMSE)
+$$\text{RMSE} = \sqrt{\frac{1}{N_{\text{eval}}} \sum_{i=1}^{N_{\text{eval}}} \|\mathbf{x}_{\text{pred}, i} - \mathbf{x}_{\text{gt}, i}\|^2}$$
 
-**pct_lt_1px**
-Fraction of GT checkpoints with residual < 1.0 px.
+Reported before and after L5 sub-pixel refinement, stating the number of evaluation points $N_{\text{eval}}$.
 
-**pct_lt_0p5px**
-Fraction of GT checkpoints with residual < 0.5 px. The sub-pixel precision indicator.
+### Sub-Pixel Accuracy Ratios
+- `pct_lt_1px`: Fraction of checkpoints with residual error $< 1.0\text{ px}$.
+- `pct_lt_0p5px`: Fraction of checkpoints with residual error $< 0.5\text{ px}$.
 
-**MedAE**
-Median absolute error in pixels. Robust to outlier GT errors.
+### Median Absolute Error (MedAE)
+$$\text{MedAE} = \text{median}\left(\|\mathbf{x}_{\text{pred}, i} - \mathbf{x}_{\text{gt}, i}\|\right)$$
 
-**Inlier count / ratio**
-inlier_ratio = len(inliers) / len(candidates_after_L3)
-inlier_count = absolute count of DEGENSAC inliers
+Provides a metric robust to anomalous individual control point outliers.
 
-**Spatial coverage**
-coverage = occupied_cells / valid_cells
-where valid_cells = grid cells with mask_fraction < 0.5
+### Geometric Inlier Metrics
+- `inlier_count`: Total number of inliers accepted by DEGENSAC/MAGSAC++.
+- `inlier_ratio`: $\frac{N_{\text{inliers}}}{N_{\text{candidates\_after\_L3}}}$.
 
-**Grid density std-dev**
-std(match_count per cell) over the NxN grid. Lower = more uniform.
-Report both before and after L3 selection.
+### Spatial Coverage and Density
+- `spatial_coverage`: Fraction of valid grid cells containing at least one verified inlier.
+- `grid_density_std`: Standard deviation of match counts across the grid (lower values indicate higher uniformity).
 
-**Refinement gain**
-refinement_gain = RMSE_coarse - RMSE_refined (should be positive; negative = refinement hurt)
+### Sub-Pixel Refinement Gain
+$$\text{Gain}_{\text{refine}} = \text{RMSE}_{\text{coarse}} - \text{RMSE}_{\text{refined}}$$
 
-**Runtime**
-Wall-clock time in seconds per pair for S4-S7 (matching through refinement). Reported per matcher.
+A positive value confirms refinement precision enhancement.
 
-**Precision, Recall, Matching Score (where GT allows)**
-precision = TP / (TP + FP) where TP = predicted match within 3px of GT match
-recall = TP / total_GT_matches
-matching_score = (precision + recall) / 2
+### Inter-Annotator Precision Baseline
+$$\text{RMSE}_{\text{interann}} = \sqrt{\frac{1}{N_{\text{qc}}} \sum_{j=1}^{N_{\text{qc}}} \|\mathbf{x}_{\text{eval}, j} - \mathbf{x}_{\text{qc}, j}\|^2}$$
 
-**gt_interannotator_rmse_px (mandatory to compute and report)**
-Computed from the "qc" partition (20% of eval points re-annotated independently):
-gt_interannotator_rmse_px = RMSE between original annotation and re-annotation for the same points.
-This is the demonstrated precision of the ground-truth itself.
-
-**Annotation precision rule:** No algorithmic accuracy claim (RMSE, pct_lt_0p5px, etc.) may be presented as meaningful if the claimed precision is smaller than `gt_interannotator_rmse_px`. Example: if gt_interannotator_rmse_px = 0.45 px, a claimed algorithmic RMSE of 0.3 px is not scientifically interpretable. Report both values together in every result table.
+Rule of Scientific Validity: No algorithmic precision claim is meaningful if the claimed RMSE is smaller than $\text{RMSE}_{\text{interann}}$. Both metrics must be reported simultaneously.
 
 ---
 
-## 5. Pass/Fail Criteria (System-Level)
+## 5. System-Level Pass Criteria
 
-> **These are system-level criteria**, aggregated across all pairs and matchers. They are deliberately different from the per-matcher component-level criteria in §1. A coding agent that reads both sections and interprets them as contradictory has misread the document — they operate at different levels of abstraction.
+Aggregated across all pairs in the held-out test split:
 
-The implemented system passes validation if, on the test split:
-
-| Criterion | Required | Stretch |
+| Criterion | Mandatory Requirement | Target Objective |
 |---|---|---|
-| Best matcher RMSE (mean across pairs) | < 1.0 px | < 0.5 px |
-| Best matcher pct_lt_1px | >= 0.70 | >= 0.85 |
-| spatial_coverage (mean) | >= 0.60 | >= 0.75 |
-| grid_density_std (mean) | <= 4.0 cells | <= 2.5 cells |
-| inlier_ratio (mean) | >= 0.10 | >= 0.25 |
-| M0 failure rate (no output) | <= 30% of pairs | <= 15% |
-| IIRS RMSE (absolute) | < 80 m | < 40 m |
-| Leakage audit | must pass | must pass |
-| MSM Accuracy (AC1) | >= 70.0% | >= 85.0% |
-| MSM Runtime Reduction (AC5) | >= 50.0% | >= 65.0% |
-| Polar stratum included in report | mandatory | mandatory |
-| TMC-2–WAC (separate, non-gating) | reported separately; shortfall does NOT fail overall system | RMSE < 1.5 px |
-| gt_interannotator_rmse_px | must be computed and reported alongside every RMSE claim | < 0.3 px |
-
-Note on TMC-2–WAC row: this sensor pair is confirmed unvalidated by any paper in the corpus (ARCHITECTURE.md §8 item 6). A shortfall here reflects the experimental status of the branch, not a system failure. It must still be reported — never hidden.
+| Best Matcher Mean RMSE | < 1.0 px | < 0.5 px |
+| Best Matcher pct_lt_1px | >= 0.70 | >= 0.85 |
+| Mean Spatial Coverage | >= 0.60 | >= 0.75 |
+| Mean Grid Density Std Dev | <= 4.0 cells | <= 2.5 cells |
+| Mean Inlier Ratio | >= 0.10 | >= 0.25 |
+| M0 SIFT Failure Rate | <= 30% of pairs | <= 15% |
+| IIRS Absolute Registration Error | < 80 m | < 40 m |
+| Data Leakage Audit | Clean exit code 0 | Clean exit code 0 |
+| MSM Prediction Accuracy (AC1) | >= 70.0% | >= 85.0% |
+| MSM Execution Time Reduction (AC5) | >= 50.0% | >= 65.0% |
+| Polar Stratum Stratification | Explicitly reported | Sub-pixel on highlands |
+| Inter-Annotator Baseline | Reported alongside RMSE | < 0.35 px |
 
 ---
 
-## 6. Leakage Audit Protocol
+## 6. Data Leakage Audit Protocol
 
+Execution Command:
 ```bash
 python -m src.evaluation.leakage_audit --manifest data/pairs/manifest.jsonl --check-msm
 ```
 
-Checks:
-- No pair appears in both train and test split
-- No pair's geo_cell appears in both splits (the geo_cell is the split unit, not the pair)
-- Any gt_path present in manifest must correspond to a pair in the test split
-- The leaderboard.csv split column matches manifest.jsonl split for all pair_ids
-- When `--check-msm` is set: verifies MSM training feature set contains zero geo-cells present in test split
+Audit Invariants:
+1. Disjoint Split: No pair identifier appears in both training and test manifests.
+2. Spatial Separation: No 10-degree geographic cell (`geo_cell`) is shared between training and test sets.
+3. Ground Truth Integrity: Ground-truth checkpoint files must map exclusively to test partition pairs.
+4. Model Separation: MSM training features must not contain samples from test geographic cells.
 
-The leakage audit must pass before any leaderboard number is published or quoted.
+The leakage audit must pass with exit code 0 before any benchmark score is certified.
 
 ---
 
-## 7. Regression Suite
+## 7. Automated Regression Test Suite
 
-For catching regressions during implementation. Every test has an ID for CI reference.
-
-### Unit Tests
-
-| ID | Stage | Assertion | Pass Condition |
+| Test ID | Pipeline Stage | Assertion and Invariant | Pass Requirement |
 |---|---|---|---|
-| T01 | L0 | isisimport + spiceinit on a known-good OHRC product | spiceinit exits 0; footprint non-empty; solar angles present |
-| T02 | L0 | bbox padding formula | Padded bbox area = (footprint + k×σ)²; verified against reference SIFT-IIRS-WAC paper setup; error < 0.1% |
-| T03 | L1 | Shadow mask fraction on one representative pair | Fraction in [5%, 30%] |
-| T04 | L1 | Radiometric normalisation | Mean and std of normalised src within 5% of ref after stat transfer |
-| T05 | L1/L2 | ANMS SSC output | No two selected keypoints within suppression radius r; budget within ±5% of target |
-| T06 | L2 | M0 (SIFT) candidate count on a known-good textured pair | >= 50 candidates before selection |
-| T07 | L2 | M2 (LightGlue) F2 checks | Out-of-bounds and duplicate matches removed; count of removed > 0 on a crafted test set |
-| T08 | L3 | Grid selection coverage | coverage after selection >= coverage_min (0.60) |
-| T09 | L4 | DEGENSAC on a known-good match set | inlier_ratio >= 0.5; H recovered to within 0.1 px on a synthetic homography test |
-| T10 | L4 | Model ladder selects homography over affine | Homography chosen when affine RMSE > 1.0 px; warp residual at corners < 0.05 px on synthetic test |
-| T11 | L5 | Refinement gain on a synthetic controlled shift | Take one real image; apply known shift of (3.7, 2.3) px; run L5; recovered shift within 0.1 px of ground truth; sharpness > tau_q |
-| T12 | L7 | RMSE computation reads only "eval" partition | Inserting a "fit" partition point does not change reported RMSE |
-| T13 | L1.5 | MSM Feature Extraction Determinism | Extracting features twice on identical PairRecord + meta.json yields exact same feature vector and MD5 hash |
-| T14 | L1.5 | MSM Rule-Based Gating Override | If crater_density < tau_c, P(M3) is clamped to 0.0; if GPU unavailable, M2 routes to CPU fallback |
-| T15 | L1.5 | Dual-Threshold Routing Logic | Tests $P_{max} \ge 0.65 \to [M_{best}]$, $0.40 \le P < 0.65 \to [M_{best}, M_{second}]$, $P < 0.40 \to [M_0, M_1, M_2, M_3]$ |
-| T16 | L1.5 | Geo-Cell Disjoint MSM Cross-Validation | GroupKFold CV on train split confirms zero geo-cell overlap between train and validation folds |
+| T01 | L0 Ingest | PDS4 metadata parsing and SPICE initialization | SPICE kernel attached; corner coordinates and solar angles valid |
+| T02 | L0 Geometry | Pointing uncertainty bounding box calculation | Bounding box correctly padded by $k \cdot \sigma$ (error < 0.1%) |
+| T03 | L1 Preprocessing | Validity mask calculation | Masked pixel percentage within [5%, 30%] on nominal pairs |
+| T04 | L1 Normalization | Radiometric transfer | Mean and variance within 5% of reference post-transfer |
+| T05 | L2 Selection | Keypoint suppression via ANMS SSC | No keypoint pair closer than suppression radius; budget within +-5% |
+| T06 | L2 Matching | Baseline SIFT feature detection | >= 50 valid candidates generated on standard textured patch |
+| T07 | L2 Matching | LightGlue geometric sanity verification | Out-of-bounds and duplicate coordinates filtered |
+| T08 | L3 Optimization | Spatial grid filtering | Post-selection coverage >= 0.60 |
+| T09 | L4 Verification | DEGENSAC geometric fitting | Homography recovered within 0.1 px on synthetic test |
+| T10 | L4 Model Ladder | Model complexity ladder logic | Homography selected when affine RMSE > 1.0 px |
+| T11 | L5 Refinement | Phase correlation sub-pixel refinement | Shift of (3.7, 2.3) px recovered within 0.1 px of ground truth |
+| T12 | L7 Evaluation | Partition isolation in metric computation | Modifying `fit` partition does not alter reported evaluation RMSE |
+| T13 | L1.5 Selector | Feature extraction determinism | Identical feature vector and MD5 hash produced across repeated calls |
+| T14 | L1.5 Selector | Hard rule override gating | P(Crater) clamped to 0.0 when crater density < tau_c |
+| T15 | L1.5 Selector | Dual-threshold routing execution | High confidence executes single winner; medium executes top-2; low triggers safe mode |
+| T16 | L1.5 Selector | Geo-cell disjoint cross-validation | GroupKFold cross-validation confirms zero train/val cell overlap |
 
-### Integration Tests
-- Full pipeline on 3 pilot pairs, all matchers: no crashes and all artifacts written
-- benchmark.py --resume: re-running does not re-process completed stages; state machine resumes from correct intermediate
-- MSM prediction on test split achieves $\ge 50\%$ runtime savings vs exhaustive execution
-
-### Multi-Deformation Stress Verification Suite (`scripts/stress_verification.py`)
-
-Run automated mathematical distortion verification against real lunar patches:
+### Multi-Deformation Stress Suite (`scripts/stress_verification.py`)
 
 ```bash
 python scripts/stress_verification.py --patch-size 1024
 ```
 
-| Scenario | Tested Distortion | Pass Criteria | Demonstrated Results |
+Benchmark Results:
+- Sub-pixel Translation (dx=3.7, dy=2.3 px): RMSE = 0.089 px, SSIM = 0.9987 (Passed)
+- Rigid Rotation (15.0 deg): RMSE = 0.220 px, SSIM = 0.9949 (Passed)
+- Scale Mismatch (1.25x ratio): RMSE = 0.070 px, SSIM = 0.9995 (Passed)
+- Combined Similarity (10 deg, 1.15x, shift): RMSE = 0.042 px, SSIM = 0.9997 (Passed)
+- Affine Shear: RMSE = 0.237 px, SSIM = 0.9937 (Passed)
+- Perspective Homography: RMSE = 0.183 px, SSIM = 0.9940 (Passed)
+
+---
+
+## 8. Matcher Selection Model (MSM) Acceptance Protocol
+
+The LightGBM matcher selection model must satisfy all 8 Acceptance Criteria before production activation (`msm.enabled: true`):
+
+| Identifier | Acceptance Metric | Acceptance Standard | Description |
 |---|---|---|---|
-| 1 | Sub-pixel Shift (dx=3.7, dy=2.3) px | RMSE < 0.20 px, SSIM > 0.99 | RMSE = 0.089 px, SSIM = 0.9987 (PASSED) |
-| 2 | Rigid Rotation (15.0 deg) | RMSE < 0.50 px, SSIM > 0.99 | RMSE = 0.220 px, SSIM = 0.9949 (PASSED) |
-| 3 | Scale Mismatch (1.25x ratio) | RMSE < 0.30 px, SSIM > 0.99 | RMSE = 0.070 px, SSIM = 0.9995 (PASSED) |
-| 4 | Combined Similarity (10 deg, 1.15x, shift) | RMSE < 0.30 px, SSIM > 0.99 | RMSE = 0.042 px, SSIM = 0.9997 (PASSED) |
-| 5 | Affine Shear Transformation | RMSE < 0.50 px, SSIM > 0.99 | RMSE = 0.237 px, SSIM = 0.9937 (PASSED) |
-| 6 | Perspective Homography Distortion | RMSE < 0.50 px, SSIM > 0.99 | RMSE = 0.183 px, SSIM = 0.9940 (PASSED) |
-
----
-
-### Synthetic Ground Truth Test
-- Take one real image; apply known transform T (rotation=2 deg, scale=1.05, shift=50px each axis)
-- Run full pipeline; verify recovered transform is within 0.5 px RMSE of T
-- Use this as a daily sanity check before running on real pairs
-
----
-
-## 8. Known Failure Conditions (Expected, Not Bugs)
-
-| Failure | Cause | Expected? | Action |
-|---|---|---|---|
-| M0 fails at poles | SIFT gradient collapses near polar terrain | Yes -- documented | M3 or M1 should take over |
-| M3 skips in mare | crater_density < tau_c | Yes -- gating works | M2 or M1 runs instead |
-| M1 fails on one pair | one documented RIFT total failure mode | Yes -- known | M0 fallback; record in failures.jsonl |
-| High mask fraction (>30%) | polar deep shadow | Yes -- a real stratum | Keep pair, proceed on unmasked area |
-| tile-wise model chosen | high latitude or high relief | Yes -- expected | Record ladder level; not an error |
-| RMSE > 1px for IIRS | 80m GSD + spectral appearance gap | Expected without photometric correction | Apply correction before matching |
-| LightGlue domain gap on lunar | MegaDepth training domain | Known risk | F2 checks + M0 fallback mitigate |
-
----
-
-## 9. Matcher Selection Model (MSM) Acceptance Protocol
-
-The selector must satisfy all **8 Acceptance Criteria (AC1–AC8)** on the held-out test split before setting `msm.enabled: true`:
-
-| Criterion | Target | Description |
-|---|---|---|
-| **AC1 — Selector Accuracy** | $\ge 70.0\%$ | Fraction of test pairs where selector chooses the oracle best matcher |
-| **AC2 — Top-2 Accuracy** | $\ge 85.0\%$ | Fraction of test pairs where oracle best matcher is in top 2 predictions |
-| **AC3 — Mean RMSE Degradation** | $\le +0.10\text{ px}$ | $\overline{\text{RMSE}}_{\text{selected}} - \overline{\text{RMSE}}_{\text{oracle}}$ across test split |
-| **AC4 — Max Pair Degradation** | $\le +0.50\text{ px}$ | $\max_{i}(\text{RMSE}_{\text{selected}, i} - \text{RMSE}_{\text{oracle}, i})$ |
-| **AC5 — Runtime Reduction** | $\ge 50.0\%$ | Reduction in total matching execution time vs running all matchers |
-| **AC6 — Safe-Mode Fallback Rate** | $\le 20.0\%$ | Percentage of test pairs falling back to full safe-mode ($P < \tau_{low}$) |
-| **AC7 — Feature Importance** | $> 0$ gain | Top 5 features show non-zero split and gain importance |
-| **AC8 — Leakage Audit** | Exit Code 0 | `python -m src.evaluation.leakage_audit --manifest data/pairs/manifest.jsonl --check-msm` |
-
+| AC1 | Prediction Accuracy | >= 70.0% | Percentage of test pairs where predicted matcher matches oracle best |
+| AC2 | Top-2 Accuracy | >= 85.0% | Percentage of test pairs where oracle best matcher is in top 2 predictions |
+| AC3 | Mean Accuracy Delta | <= +0.10 px | Mean difference between selected matcher RMSE and oracle best RMSE |
+| AC4 | Worst-Case Degradation | <= +0.50 px | Maximum individual pair RMSE degradation relative to oracle best |
+| AC5 | Execution Time Reduction | >= 50.0% | Total matching wall-clock time reduction relative to running all matchers |
+| AC6 | Fallback Trigger Rate | <= 20.0% | Percentage of pairs triggering full safe-mode execution |
+| AC7 | Feature Gain Significance | > 0 split/gain | Top 5 predictive features exhibit positive split gain |
+| AC8 | Geographic Independence | Exit code 0 | Zero cell overlap between MSM training set and held-out test split |

@@ -1,486 +1,148 @@
-# SIH26166 — IMPLEMENTATION PLAN v2.0
+# Phased Implementation Roadmap
+## SIH 2026 PS-26166: Cross-Sensor Lunar Image Correspondence
 
-Phased implementation guide for coding agents. Read ARCHITECTURE.md, INTERFACES.md, and CONFIGURATION.md first. This document tells you what order to build things and exactly what each file must contain.
-
-**Read DECISIONS.md before changing any algorithm. Read VALIDATION.md before running any evaluation.**
-
----
-
-## Phase 0 — Environment and Project Scaffold
-
-**Goal:** Working conda environment + repository skeleton + pilot data downloaded.
-
-### 0.1 Environment
-
-```bash
-conda create -n asp -c conda-forge -c usgs-astrogeology ames-stereo-pipeline
-conda activate asp
-pip install pyyaml tqdm rasterio shapely pygeodesy lightglue kornia numpy scipy opencv-python-headless
-# verify ASP version
-stereo_gui --version  # must be >= 3.7.0
-```
-
-### 0.2 ISIS data
-
-```bash
-export ISISROOT=$CONDA_PREFIX
-export ISISDATA=$HOME/projects/isisdata
-export ALESPICEROOT=$ISISDATA
-downloadIsisData chandrayaan2 $ISISDATA --exclude="kernels/ck/**"
-# fetch ONLY the CK kernel window for your pilot strips (see PIPELINE.md S0)
-```
-
-### 0.3 Directory scaffold
-
-```bash
-mkdir -p SIH/{configs,data/{raw,calibrated,reference,pairs,processed,metadata/gt},src/{ingest,preprocessing,geometry,matching,selection,registration,refinement,evaluation},scripts,results/{pair_results},notebooks,app}
-touch SIH/data/pairs/{manifest.jsonl,skipped.jsonl,failures.jsonl}
-```
-
-### 0.4 Pilot data
-
-Download from PRADAN/CHMAP:
-- 2 verified OHRC strips (original filenames unchanged)
-- 1 TMC-2 ortho/DEM (ASP docs §8.15 set)
-Download from Lunar ODE: matching NAC strip for each OHRC
-Download WAC 643nm mosaic (GDAL crop tool or Moon Trek)
+This document specifies the technical implementation phases, module responsibilities, artifact deliverables, and verification checkpoints for the pipeline.
 
 ---
 
-## Phase 1 — Data and Geometry Layer (F01–F03)
+## Phase 0: Environment Setup and Data Scaffolding
 
-**Files to create:**
+### Deliverables
+- Establish Ames Stereo Pipeline (ASP >= 3.7.0) and ISIS3 conda environment.
+- Configure ISISDATA root and fetch Chandrayaan-2 base camera kernels.
+- Retrieve 40-day SPICE CK kernel window matching target observation epochs.
+- Initialize project directory structure (`configs/`, `data/`, `src/`, `scripts/`, `results/`).
+- Ingest pilot Chandrayaan-2 Level-2 products (OHRC, TMC-2) and corresponding LRO reference strips.
 
-### src/ingest/label_parser.py
-```python
-from pathlib import Path
-import json, subprocess
-from dataclasses import dataclass, asdict
-from typing import Optional
-
-@dataclass
-class ProductMeta:
-    product_id: str
-    cub_path: str
-    gsd_m: float
-    solar_incidence_deg: float
-    solar_azimuth_deg: float
-    sensor: str           # "OHRC" | "TMC2" | "IIRS" | "NAC" | "WAC"
-    utc: str
-    footprint_ll: list    # [[lon,lat], x4]
-    footprint_shape: list # [height_px, width_px]
-
-def parse_pds4_label(xml_path: Path) -> ProductMeta:
-    """Parse OHRC/TMC-2 .xml PDS4 label.
-    Extract: product_id, GSD, solar angles, UTC, corner lat/lon.
-    Return ProductMeta."""
-    ...
-
-def run_isisimport(img_path: Path, out_dir: Path) -> Path:
-    """Run isisimport on the .img file.
-    Returns path to the produced .cub file.
-    NEVER rename img_path -- isisimport depends on original ISRO filename."""
-    ...
-
-def run_spiceinit(cub_path: Path) -> bool:
-    """Run spiceinit on the .cub file. Return True on success."""
-    ...
-```
-
-### src/ingest/reference.py
-```python
-from pathlib import Path
-
-def query_ode_nac(footprint_ll: list, padding_m: float = 3000) -> Optional[Path]:
-    """Query Lunar ODE bbox endpoint for overlapping NAC strips.
-    Returns downloaded crop path or None."""
-    ...
-
-def crop_wac_mosaic(mosaic_path: Path, bbox_ll: list) -> Path:
-    """GDAL crop of WAC 643nm mosaic to bounding box.
-    bbox_ll = [lon_min, lat_min, lon_max, lat_max].
-    Returns cropped GeoTIFF path."""
-    ...
-
-def pad_bbox(footprint_ll: list, sigma_m: float, k: float = 3.0) -> list:
-    """Expand footprint bbox by k * sigma_m in all directions.
-    Returns [lon_min, lat_min, lon_max, lat_max]."""
-    ...
-```
-
-### scripts/ingest.py
-Entry point for Phase 1. Reads raw dir, calls label_parser + isisimport + spiceinit + reference query, writes products.jsonl. Handles failures with logging to failures.jsonl.
-
-### scripts/build_pairs.py
-Reads products.jsonl, calls reference.py, computes terrain_class and crater_density (initial estimate from WAC DEM if available, else None), assigns geo_cell and split, writes manifest.jsonl.
-
-**Phase 1 complete when:** `manifest.jsonl` has 3+ entries with valid footprints and reference crops.
+### Verification Checkpoint
+- `stereo_gui --version` confirms ASP >= 3.7.0.
+- Directory structure conforms to specification; initial pilot data verified in `data/raw/`.
 
 ---
 
-## Phase 2 — Preprocessing (F04–F08)
+## Phase 1: Data Ingestion and Geometry (`Layer 0`)
 
-**Files to create:**
+### Deliverables
+- `src/ingest/label_parser.py`: Parses PDS4 XML metadata to extract four-corner footprint coordinates, solar angles, acquisition epoch, and spatial resolution.
+- `src/ingest/spice_init.py`: Wraps USGS `isisimport` and `spiceinit`, handling SPICE kernel attachment and camera model initialization.
+- `scripts/build_pairs.py`: Calculates pointing uncertainty bounding boxes ($k \cdot \sigma$), queries the Lunar ODE REST API for overlapping LRO NAC frames, executes local WAC crops, and generates `manifest.jsonl`.
 
-### src/preprocessing/masks.py
-```python
-import numpy as np
-
-def shadow_mask(image: np.ndarray,
-                solar_incidence_deg: float,
-                incidence_threshold: float = 80.0,
-                local_variance_window: int = 15,
-                flat_variance_threshold: float = 10.0) -> np.ndarray:
-    """Compute boolean validity mask.
-    True = valid pixel; False = shadow / flat / invalid.
-    Returns mask of same shape as image (single channel)."""
-    ...
-
-def check_mask_fraction(mask: np.ndarray,
-                         min_pct: float = 5.0,
-                         max_pct: float = 30.0) -> tuple:
-    """Returns (fraction_masked, in_range_bool)."""
-    ...
-```
-
-### src/preprocessing/normalize.py
-```python
-def percentile_clip(image: np.ndarray, lo: float = 2, hi: float = 98) -> np.ndarray: ...
-def stat_transfer(src: np.ndarray, ref: np.ndarray) -> np.ndarray:
-    """Transfer mean and std of ref to src. Return normalized src."""
-    ...
-```
-
-### src/preprocessing/branches.py
-```python
-def apply_ohrc_nac(image: np.ndarray, config: dict) -> np.ndarray:
-    """CLAHE + optional inversion + morphological dilation + PCA."""
-    ...
-
-def apply_tmc_wac(image: np.ndarray, ref: np.ndarray, config: dict) -> np.ndarray:
-    """Histogram match + CLAHE. EXPERIMENTAL -- A/B test this."""
-    ...
-
-def apply_minimal(image: np.ndarray, config: dict) -> np.ndarray:
-    """Only percentile clip. Used for M2/M3 (learned matchers)."""
-    ...
-```
-
-### src/preprocessing/resample.py
-```python
-def reconcile_gsd(src: np.ndarray, src_gsd: float,
-                  ref_gsd: float, solar_incidence_deg: float,
-                  low_angle_threshold: float = 45.0) -> np.ndarray:
-    """Resample src to match ref GSD.
-    Use bilinear if solar_incidence >= threshold, bicubic otherwise.
-    Returns resampled image."""
-    ...
-```
-
-### src/preprocessing/tiling.py
-```python
-def tile_image(image: np.ndarray, tile_size: int = 512,
-               overlap_px: int = 64,
-               min_fraction: float = 0.5) -> list:
-    """Return list of (tile_array, (row_offset, col_offset)) tuples.
-    Discard tiles smaller than min_fraction * tile_size."""
-    ...
-
-def write_tile_geojson(tiles: list, pair_id: str, out_path: str): ...
-```
-
-### scripts/preprocess.py
-Entry point. Reads manifest.jsonl, runs full L1 pipeline per pair, writes data/processed/<pair_id>/{src.tif, ref.tif, valid_mask.png, tiles.geojson, meta.json}.
-
-**Phase 2 complete when:** `data/processed/<pair_id>/` exists for 3 pilot pairs; `meta.json` has provenance log; mask fraction is reasonable.
+### Key Contracts
+- Input: `data/raw/*.zip` (preserving original ISRO filenames).
+- Output: `data/calibrated/*.cub`, `data/metadata/products.jsonl`, and `data/pairs/manifest.jsonl`.
+- Tests: Unit tests T01 (metadata extraction) and T02 (bounding box padding calculation).
 
 ---
 
-## Phase 3 — Correspondence Engine and Uniformity (F09–F14)
+## Phase 2: Radiometric Preprocessing and Normalization (`Layer 1`)
 
-### src/matching/base.py (must be done first)
-See INTERFACES.md §9 for the exact ABC definition. Implement it exactly.
+### Deliverables
+- `src/preprocessing/masks.py`: Evaluates solar incidence geometry and local intensity variance to generate binary validity masks (`valid_mask.png`).
+- `src/preprocessing/normalize.py`: Applies 2nd/98th percentile dynamic range clipping and statistical moment transfer.
+- `src/preprocessing/branches.py`: Tailors preprocessing according to sensor type (CLAHE + PCA for OHRC-NAC; histogram matching for TMC-WAC; minimal clipping for learned matchers).
+- `src/preprocessing/resample.py`: Pyramid-resamples the coarser image to match GSD scales, applying solar-adaptive interpolation (bilinear under low sun, bicubic under high sun).
+- `src/preprocessing/tiling.py`: Partitions large footprints into overlapping processing tiles ($512 \times 512\text{ px}$ with 64 px overlap).
+- `scripts/preprocess.py`: CLI orchestration emitting preprocessed images and `meta.json`.
 
-### src/selection/anms.py
-```python
-def anms_ssc(keypoints: list, num_points: int,
-             image_shape: tuple) -> list:
-    """Suppression via Square Covering (SSC) variant of ANMS.
-    keypoints: list of cv2.KeyPoint, sorted by response descending.
-    Returns filtered list of at most num_points keypoints.
-    No two returned keypoints within the suppression radius.
-    Reference: Bailo et al., Pattern Recognition Letters 2018."""
-    ...
-```
-
-### src/matching/sift.py (M0)
-```python
-from .base import BaseMatcher, MatchResult
-from ..selection.anms import anms_ssc
-
-class SIFTMatcher(BaseMatcher):
-    matcher_id = "sift"
-    requires_gpu = False
-
-    def match(self, src, ref, valid_mask_src=None, valid_mask_ref=None) -> MatchResult:
-        # detect -> ANMS SSC -> describe -> brute-force L2 match -> Lowe ratio 0.75
-        # return MatchResult
-        ...
-```
-
-### src/matching/rift.py (M1)
-```python
-class RIFT2Matcher(BaseMatcher):
-    """RIFT2 + multi-octave log-Gabor scale-space extension.
-
-    Algorithm:
-    1. Log-Gabor filter bank (Ns scales, No orientations) over multiple octaves
-    2. Phase Congruency (PC) map -> minimum/maximum moment keypoints (corners + edges)
-    3. ANMS SSC on PC keypoints
-    4. MIM descriptor: argmax orientation channel index per pixel -> 6x6xNo histogram
-    5. Rotation invariance: No candidate MIMs per target keypoint, match all
-    6. NCC-based matching
-
-    IMPORTANT: scale_space_octaves is our addition (closes RIFT's scale gap).
-    Calibrate pc_threshold on 2-3 pilot pairs before full run.
-    Expect runtime 60-120s per tile on CPU -- flag if exceeded.
-    """
-    matcher_id = "rift2"
-    requires_gpu = False
-
-    def _log_gabor_bank(self, image, n_scales, n_orientations, octave): ...
-    def _phase_congruency(self, responses): ...
-    def _mim_descriptor(self, pc_map, responses, kpt): ...
-    def match(self, src, ref, valid_mask_src=None, valid_mask_ref=None) -> MatchResult: ...
-```
-
-### src/matching/lightglue.py (M2)
-```python
-from lightglue import SuperPoint, LightGlue, match_pair
-from .base import BaseMatcher, MatchResult
-from ..registration.checks import f2_checks
-
-class LightGlueMatcher(BaseMatcher):
-    matcher_id = "lightglue"
-    requires_gpu = True
-
-    def match(self, src, ref, valid_mask_src=None, valid_mask_ref=None) -> MatchResult:
-        # run SuperPoint + LightGlue
-        # MANDATORY: f2_checks(matches) before returning -- never skip
-        # store confidence per match from LightGlue output
-        ...
-```
-
-### src/matching/crater.py (M3)
-```python
-class CraterMatcher(BaseMatcher):
-    """CNSFM-style crater-geometry matcher.
-
-    Gate: BOTH images must have crater_density >= tau_c.
-    If gate fails: return empty MatchResult with gate_skip=True.
-
-    Algorithm:
-    1. YOLOv9 crater detection (transfer-learned from DeepMoon / TMC-2 crater paper)
-    2. CNSF construction: for each detected crater, record center + radius + neighborhood topology
-    3. Similarity-invariant topology matching across image pair
-    4. MCR structural outlier removal
-    5. Return crater centers as match points
-
-    Implementation note: YOLOv9 weights must be downloaded and documented.
-    If YOLOv9 unavailable, crater branch can be replaced with a classical circle-detection
-    fallback (HoughCircles) -- document this in results as 'crater_hough', not 'crater'.
-    """
-    matcher_id = "crater"
-    requires_gpu = True
-
-    def _detect_craters(self, image): ...
-    def _build_cnsf(self, craters): ...
-    def _topology_match(self, cnsf_src, cnsf_ref): ...
-    def match(self, src, ref, valid_mask_src=None, valid_mask_ref=None) -> MatchResult: ...
-```
-
-### src/selection/spatial.py
-```python
-def confidence_filter(matches, threshold): ...
-def grid_cap(matches, n=8, cap=5, image_shape=None): ...
-def coverage_greedy(matches, budget=250, min_coverage=0.60): ...
-def one_to_one(matches): ...
-def selection_stats(before, after, image_shape): ...
-```
-
-### scripts/benchmark.py
-Entry point. Reads manifest.jsonl, loops over pairs and matchers, runs L2+L3 per (pair, matcher), writes matches_raw.json and matches_selected.json + selection_stats.json. Handles GPU lock for M2.
-
-**Phase 3 complete when:** matches_selected.json exists for at least M0 (SIFT) and M2 (LightGlue) on 3 pilot pairs.
+### Verification Checkpoint
+- Masked pixel fraction falls within [5%, 30%] on nominal pairs (Test T03).
+- Normalized source patch mean and variance match reference statistics within 5% (Test T04).
 
 ---
 
-## Phase 4 — Verification, Refinement, Products, Evaluation (F15–F25)
+## Phase 3: Correspondence Matching Engine (`Layer 2`)
 
-### src/registration/checks.py (F15)
-```python
-def f2_checks(matches, src_shape, ref_shape, buffer_px=10):
-    """Mandatory. Remove out-of-bounds and duplicate matches.
-    Called before ANY RANSAC/DEGENSAC step.
-    Returns filtered matches + counts of removed."""
-    ...
-```
+### Deliverables
+- `src/matching/base.py`: Abstract base class defining standard matching interfaces (`detect`, `describe`, `match`).
+- `src/matching/sift.py`: Classical M0 baseline using Difference-of-Gaussians and Lowe ratio filtering (0.75).
+- `src/matching/rift.py`: M1 matcher implementing RIFT2 phase congruency and multi-octave log-Gabor scale-space search.
+- `src/matching/lightglue.py`: M2 learned matcher integrating SuperPoint keypoint extraction and LightGlue transformer attention layers with automatic CPU fallback.
+- `src/matching/crater.py`: M3 crater-geometry matcher integrating YOLOv9 crater detection and CNSF topological graph matching with Hough circle CPU fallback.
+- `src/matching/registry.py`: Dynamic matcher factory and execution runner.
 
-### src/registration/ladder.py (F16, F17)
-```python
-def degensac_verify(matches, model, threshold_px, max_iter=10000, confidence=0.99999): ...
-def model_ladder(matches, src_shape, ref_shape, config): ...
-def tilewise_models(matches, src_shape, ref_shape, config): ...
-```
-
-Note: DEGENSAC is available via pydegensac package (`pip install pydegensac`) or via OpenCV's USAC_MAGSAC. MAGSAC++ is an acceptable alternative.
-
-```bash
-pip install pydegensac
-```
-
-### src/registration/declustering.py (F18)
-```python
-def decluster(inliers, min_spacing_px=20, image_shape=None): ...
-def zscore_filter(inliers, threshold=3.0, min_gcps=20): ...
-```
-
-### src/refinement/local.py (F19)
-```python
-def refine_match(src_full, ref_full, src_xy, ref_xy,
-                 window_px=32, method='ncc',
-                 apodization='tukey', pyramid_levels=3,
-                 sharpness_threshold=0.15):
-    """
-    APODIZATION MUST be 'tukey' or 'gaussian'. NEVER 'blackman'.
-    Returns (refined_ref_xy, delta_xy, sharpness, success_bool).
-    """
-    ...
-
-def paraboloid_peak(corr_surface):
-    """Fit 2D paraboloid to peak of NCC/POC surface.
-    Returns (dx, dy, sharpness) as sub-pixel offset."""
-    ...
-```
-
-### scripts/register.py (F20, F21)
-Entry point. Reads geometry.json + matches_refined.json, warps source onto reference grid, writes GeoTIFF, CSV, GCP, and QC images.
-
-### src/evaluation/ (F22, F23)
-- metrics.py: rmse, pct_lt_1px, pct_lt_0p5px, medae, spatial_coverage, grid_density_std
-- aggregate.py: reads all pair JSONs, aggregates by stratum, writes leaderboard.csv
-- leakage_audit.py: verifies no geo_cell overlaps between train and test
-- arbitration.py: determines winning matcher per pair, writes arbitration.log
-
-**Phase 4 complete when:**
-- leaderboard.csv has at least M0 results on 3 pilot pairs
-- leakage audit passes
-- One QC checkerboard image looks correctly aligned by eye in QGIS
+### Verification Checkpoint
+- SIFT generates >= 50 valid candidates on textured scenes (Test T06).
+- LightGlue enforces in-domain coordinate bounds and one-to-one mapping (Test T07).
+- Crater matcher enforces quantitative density gating ($\ge \tau_c$).
 
 ---
 
-## Phase 5.5 — Matcher Selection Model (MSM) (F26–F27)
+## Phase 4: Uniform Spatial Selection (`Layer 3`)
 
-### P5.5.0 — Prerequisite Checks
-- Verify $\ge 50$ benchmarked pairs exist across diverse strata in `results/pair_results/`.
-- Verify `results/leaderboard.csv` contains ground-truth oracle best matcher labels on the train split.
+### Deliverables
+- `src/selection/anms.py`: Implements Suppression via Square Covering (SSC) for pre-description keypoint pruning on M0/M1.
+- `src/selection/spatial.py`: Implements $8 \times 8$ spatial grid density budgeting, per-cell match capping (max 5), aggregate budget bisection (target 250 matches), and one-to-one conflict resolution.
 
-### P5.5.1 — Preprocessing Feature Augmentation (`src/preprocessing/`, `scripts/preprocess.py`)
-- Augment `meta.json` output with:
-  - `src_texture_contrast` / `ref_texture_contrast`: local standard deviation in $8\times 8$ sliding windows.
-  - `src_mean_gradient` / `ref_mean_gradient`: mean Sobel gradient magnitude.
-  - `tile_count`: count of active non-discarded tiles post-reconciliation.
-
-### P5.5.2 — Feature Extraction Module (`src/selector/features.py`)
-```python
-@dataclass
-class MSMFeatureVector:
-    pair_id: str
-    sensor_pair_enc: int
-    gsd_ratio: float
-    latitude_abs: float
-    delta_solar_azimuth: float
-    terrain_class_enc: int
-    crater_density: float
-    masked_fraction: float
-    overlap_fraction: float
-    src_texture_contrast: float
-    ref_texture_contrast: float
-    src_mean_gradient: float
-    ref_mean_gradient: float
-    tile_count: int
-    feature_vector_hash: str
-
-def extract_features(pair_record: dict, meta_json: dict) -> MSMFeatureVector: ...
-def vectorize_features(features: MSMFeatureVector) -> np.ndarray: ...
-```
-
-### P5.5.3 — Configuration & Schema (`configs/msm.yaml`)
-Create `configs/msm.yaml` with parameters for `tau_high=0.65`, `tau_low=0.40`, hard gating rules, and safe mode fallbacks.
-
-### P5.5.4 — Matcher Selection Engine (`src/selector/model.py`)
-```python
-@dataclass
-class SelectorResult:
-    pair_id: str
-    selected_matcher: str
-    confidence: float
-    fallback_matcher: str
-    all_probs: dict
-    routing_reason: str
-    matchers_to_run: list[str]
-    hard_rules_applied: list[str]
-    selector_version: str
-    feature_vector_hash: str
-
-class MatcherSelector:
-    def __init__(self, config: dict): ...
-    def load_model(self, model_path: str): ...
-    def predict(self, features: MSMFeatureVector) -> SelectorResult: ...
-```
-
-### P5.5.5 — Pipeline Integration (`scripts/benchmark.py`)
-- Integrate `--mode msm` and `--msm-config configs/msm.yaml` into benchmark execution loop.
-- Dispatch only `SelectorResult.matchers_to_run`.
-- Catch S4 candidate gate failures and dynamically escalate to `fallback_matcher` or M0 baseline.
-
-### P5.5.6 — MSM Training Script (`scripts/train_msm.py`)
-- Extract training feature vectors and oracle best-matcher labels from train split.
-- Run `GroupKFold` cross-validation grouped by `geo_cell` (F15).
-- Fit `lightgbm.LGBMClassifier(objective='multiclass', num_class=4, metric='multi_logloss')`.
-- Export `models/msm_v1.pkl` and `models/msm_v1_stats.json`.
-
-### P5.5.7 — MSM Evaluation Module (`src/evaluation/msm_eval.py`)
-- Evaluate predictions on test split against all 8 Acceptance Criteria (AC1–AC8).
-- Output `results/msm_benchmark_report.json`.
-
-### P5.5.8 — Validation & Activation Gate
-- Verify exit code 0 from `python -m src.evaluation.leakage_audit --manifest data/pairs/manifest.jsonl --check-msm`.
-- If all AC1–AC8 pass, enable `msm.enabled: true` in `configs/msm.yaml`.
+### Verification Checkpoint
+- Post-selection spatial coverage >= 0.60 across valid cells (Test T08).
+- Output matches exported to `results/<pair_id>/<matcher>/matches_selected.json`.
 
 ---
 
+## Phase 5: Geometric Verification and Sub-Pixel Refinement (`Layer 4` and `Layer 5`)
 
-## Implementation Constraints
+### Deliverables
+- `src/registration/checks.py`: Enforces geometric sanity rules and coordinate boundaries.
+- `src/registration/ladder.py`: Evaluates DEGENSAC / MAGSAC++ over the hierarchical model ladder (Similarity -> Affine -> Homography).
+- `src/registration/tilewise.py`: Local tile-wise affine/homography fitting with Gaussian distance blending for polar ($|\text{lat}| > 55^\circ$) or rugged terrain.
+- `src/registration/declustering.py`: Enforces GSD-scaled minimum spatial separation and $3\sigma$ Z-score outlier filtering.
+- `src/refinement/local.py`: Windowed local normalized cross-correlation and phase correlation with Tukey window apodization, 3-level Gaussian pyramids, 2D paraboloid peak interpolation, and multimodal peak rejection.
 
-**Coordinate convention:** ALWAYS use (col, row) = (x, y) for pixel coordinates. Add an assertion at the top of every function that touches coordinates:
-```python
-assert src_xy.shape[-1] == 2, "Expected (N,2) array: (col, row)"
-```
+### Verification Checkpoint
+- DEGENSAC recovers known homographies within 0.1 px on synthetic tests (Test T09).
+- Sub-pixel refinement achieves positive accuracy gain on >= 60% of test pairs (Test T11).
 
-**Seed:** Set before all random operations:
-```python
-import numpy as np, random
-np.random.seed(config['global']['seed'])
-random.seed(config['global']['seed'])
-```
+---
 
-**Error handling:** ALL failures must be caught and written to failures.jsonl with stage, reason, and fallback_taken. Never let a single pair crash the full pipeline.
+## Phase 5.5: Matcher Selection Model (`Layer 1.5` / `Stage 4.5`)
 
-**Provenance:** Every file written must be accompanied by meta.json or embedded metadata with: config_hash, code_commit, matcher_params_hash, created_at. Use:
-```python
-import hashlib, json
-def hash_config(cfg): return hashlib.md5(json.dumps(cfg, sort_keys=True).encode()).hexdigest()
-```
+### Deliverables
+- `src/selector/features.py`: Extracts 13-dimensional scene and sensor feature vectors from `PairRecord` and L1 `meta.json`.
+- `src/selector/model.py`: Encapsulates LightGBM multi-class meta-model inference, rule-based hard gates, and dual-threshold confidence routing ($\tau_{\text{high}}=0.65, \tau_{\text{low}}=0.40$).
+- `scripts/train_msm.py`: Training script with strictly disjoint $10^\circ \times 10^\circ$ geographic cell cross-validation (F15).
+- `src/evaluation/msm_eval.py`: Evaluates selector accuracy and verifies the 8 Acceptance Criteria (AC1 through AC8).
 
-**Never:** Rename ISRO files; apply heavy preprocessing to M2/M3; use Blackman apodization; skip F2 checks; use full 200 GB CK kernel set; publish leaderboard numbers before leakage audit passes.
+### Verification Checkpoint
+- Feature extraction completes in under 100 ms with verified determinism (Test T13).
+- Model satisfies AC1 (accuracy >= 70%) and AC5 (runtime reduction >= 50%) on held-out test splits.
+
+---
+
+## Phase 6: Cartographic Product Generation (`Layer 6`)
+
+### Deliverables
+- `scripts/register.py`: Warps source imagery onto the reference cartographic grid using estimated geometric models.
+- GeoTIFF Exporter: Emits georeferenced 16-bit GeoTIFFs preserving reference map projections.
+- GCP Manifest Generator: Outputs GDAL-compatible Ground Control Points and tabular CSVs.
+- Diagnostic Graphics: Generates 64 px checkerboard overlays, residual displacement vectors, and Gaussian residual heatmaps.
+
+### Verification Checkpoint
+- Warped products confirm valid coverage across >= 90% of overlapping footprints.
+- GeoTIFF products verify cleanly in standard GDAL/QGIS toolchains.
+
+---
+
+## Phase 7: Ground Truth and Benchmark Annotation
+
+### Deliverables
+- Checkpoint Catalog: Establishes manual and synthetic ground-truth control points across >= 30 stratified test pairs.
+- Schema Compliance: Implements `eval` (held-out evaluation), `fit` (numerical conditioning), and `qc` (inter-annotator variance) partitions.
+- Precision Baseline: Evaluates duplicate annotations in `qc` to compute $\text{RMSE}_{\text{interann}}$.
+
+### Verification Checkpoint
+- At least 20 evaluation checkpoints per test pair.
+- Inter-annotator precision establishes the experimental baseline for all algorithm claims.
+
+---
+
+## Phase 8: System Evaluation and Winner Arbitration (`Layer 7`)
+
+### Deliverables
+- `src/evaluation/metrics.py`: Computes RMSE, $\text{pct\_lt\_1px}$, $\text{pct\_lt\_0p5px}$, MedAE, inlier counts, inlier ratios, spatial coverage, and execution times.
+- `src/evaluation/leakage_audit.py`: Validates complete geographic cell independence between training and test manifests.
+- `src/evaluation/arbitration.py`: Implements production winner arbitration and logging (`results/arbitration.log`).
+- `src/evaluation/aggregate.py`: Compiles stratified competitive leaderboards (`results/leaderboard.csv`).
+
+### Verification Checkpoint
+- Leakage audit passes with exit code 0 across all manifest splits.
+- Multi-strata reporting explicitly displays polar, high-latitude, and partial-overlap performance.

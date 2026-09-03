@@ -1,386 +1,330 @@
-# SIH26166 — FEATURES v2.0
+# System Feature Specifications
+## SIH 2026 PS-26166: Cross-Sensor Lunar Image Correspondence
 
-Complete feature list. Implement every F0x–F2x feature. Do not add features not listed here without architectural review.
-
-Format: ID | Name | Component | Description / Acceptance Criteria / Notes
-
----
-
-## F01 — Product Ingestion and Calibration
-
-**Component:** L0 / scripts/ingest.py
-**Description:** Accept PRADAN/CHMAP zip archives (.img + .xml PDS4 for OHRC/TMC-2; QUB for IIRS). Unzip preserving original ISRO filenames. Run isisimport to produce .cub files. Run spiceinit (or CSM isd_generate) to attach camera geometry. Fetch only the per-date CK kernel window (not the full 200 GB set).
-**Acceptance criteria:**
-- .cub file produced for every valid product
-- spiceinit exits 0; SPICE kernel attached and queryable
-- Footprint (4 corner lat/lon) extracted and stored in products.jsonl
-- Solar incidence, solar azimuth, UTC, GSD recorded per product
-- NO file has been renamed from its ISRO original name
-
-**Implementation note:** ASP version must be >= 3.7.0. Check version at startup. CK kernel window = strip UTC ± 20 days.
+This document specifies all functional features (F01 through F27), operational components, acceptance criteria, and mathematical invariants across the pipeline.
 
 ---
 
-## F02 — Automated Reference Patch Acquisition
+## F01. Product Ingestion and Geometric Calibration
 
-**Component:** L0 / scripts/build_pairs.py
-**Description:** Given a source product footprint, automatically acquire the corresponding reference image patch without manual work. For NAC: query Lunar ODE bbox endpoint. For WAC: crop local WAC 643nm mosaic via GDAL. For SELENE: query Moon Trek WMTS by bbox (Kaguya TC 10 m/px or MI 62 m/px). Apply 2-5x pointing-uncertainty padding to the footprint bbox before querying.
-**Acceptance criteria:**
-- Reference patch exists for >= 90% of valid source products
-- Bounding box padding is recorded in PairRecord
-- Fallback chain is implemented in order: NAC via ODE -> WAC crop -> SELENE Moon Trek WMTS -> skip with reason
-- ref.type recorded as NAC | WAC | SELENE in PairRecord; SELENE pairs form a separate evaluation stratum
-
----
-
-## F03 — PairRecord Manifest
-
-**Component:** L0 / build_pairs.py
-**Description:** For every (source, reference) pair, write a complete PairRecord to manifest.jsonl (one JSON per line). See INTERFACES.md §1 for the full schema.
-**Acceptance criteria:**
-- manifest.jsonl is append-only; pairs are never deleted, only flagged
-- Every PairRecord includes: pair_id, sensor, GSD, solar angles, terrain_class, crater_density, geo_cell, split
-- skipped.jsonl exists and captures all skipped pairs with reason
+- Component: Layer 0 (`scripts/ingest.py`)
+- Description: Ingests ISRO PRADAN zip archives containing Level-2 calibrated products (.img and .xml for OHRC/TMC-2; QUB for IIRS). Original filenames are preserved. Translates rasters using ISIS `isisimport` and attaches SPICE pointing kernels using `spiceinit` or CSM. Fetches SPICE CK kernels over a 40-day window around image acquisition epoch.
+- Acceptance Criteria:
+  - Generates valid ISIS cube (`.cub`) for every processed archive.
+  - `spiceinit` completes with exit code 0; kernel ephemerides attach successfully.
+  - Computes four-corner geographic bounding footprint and records in `products.jsonl`.
+  - Extracts solar incidence angle, solar azimuth angle, acquisition UTC, and spatial resolution (GSD).
+  - Original ISRO filenames remain unaltered.
 
 ---
 
-## F04 — Shadow and Validity Masking
+## F02. Automated Reference Patch Acquisition
 
-**Component:** L1 / src/preprocessing/masks.py
-**Description:** Compute a per-pixel validity mask for every source and reference image. The mask identifies: dark pixels (below solar-incidence-derived threshold), flat pixels (local variance below threshold), and cast-shadow regions. Export as valid_mask.png. All downstream stages must respect this mask.
-**Acceptance criteria:**
-- Mask fraction between 5% and 30% for nominal pairs; outside range: flag the pair
-- Matches whose support patch touches the mask are rejected at every stage
-- Mask exported alongside every processed pair
-
----
-
-## F05 — Radiometric Normalization
-
-**Component:** L1 / src/preprocessing/normalize.py
-**Description:** Apply 2nd/98th percentile clip and min-max rescaling to source and reference patches. Then transfer mean/std of source to match reference statistics (stat_transfer). This is the minimal, always-on normalization applied before every detector.
-**Acceptance criteria:**
-- Mean and std of normalized source within 5% of reference after transfer
-- Operation is documented in meta.json provenance log
+- Component: Layer 0 (`scripts/build_pairs.py`)
+- Description: Queries lunar reference datasets based on source product geographic footprints. For LRO NAC, queries the NASA Lunar ODE REST API. For LRO WAC, executes GDAL crops from local global mosaics. Bounding boxes are padded by 2x to 5x pointing uncertainty ($\sigma \approx 1000\text{ m}$) prior to querying.
+- Acceptance Criteria:
+  - Reference imagery acquired for >= 90% of valid source footprints.
+  - Bounding box padding recorded in `PairRecord`.
+  - Fallback hierarchy executes in sequence: LRO NAC via ODE -> local WAC crop -> SELENE Moon Trek WMTS.
+  - Reference type recorded as `NAC`, `WAC`, or `SELENE`.
 
 ---
 
-## F06 — Sensor Branch Preprocessing
+## F03. Pair Catalog Manifest
 
-**Component:** L1 / src/preprocessing/branches.py
-**Description:** Apply sensor-specific preprocessing after F05:
-- OHRC->NAC branch: CLAHE (clip=2.0, tile=8x8) + optional contrast inversion + morphological dilation + PCA reduction to 1 component
-- TMC-2->WAC branch: histogram matching + CLAHE (experimental; A/B test against minimal)
-- M2/M3 (learned matchers): SKIP this step; apply F05 only
-**Acceptance criteria:**
-- Branch applied matches config (sensor pair + matcher)
-- Learned matchers NEVER receive heavy branch preprocessing
-- Branch choice recorded in meta.json
+- Component: Layer 0 (`scripts/build_pairs.py`)
+- Description: Writes comprehensive `PairRecord` entries to `data/pairs/manifest.jsonl` (one JSON record per line). Schema details are governed by `docs/CONTRACTS.md`.
+- Acceptance Criteria:
+  - `manifest.jsonl` operates in append-only mode.
+  - Every record defines `pair_id`, `sensor`, `gsd_m`, solar angles, `terrain_class`, `crater_density_per_km2`, `geo_cell`, and `split`.
+  - Skipped pairs are captured in `data/pairs/skipped.jsonl` with failure reasons.
 
 ---
 
-## F07 — GSD Reconciliation and Adaptive Interpolation
+## F04. Shadow and Validity Masking
 
-**Component:** L1 / src/preprocessing/resample.py
-**Description:** Pyramid resample the coarser-GSD image to match the finer-GSD image's pixel size before matching. Select interpolation method based on solar incidence: bilinear for incidence >= 45 degrees (high shadow), bicubic for incidence < 45 degrees (high angle, crisp detail).
-**Acceptance criteria:**
-- GSD ratio and interpolation method recorded in meta.json
-- Output pixel sizes are within 5% of each other
-- Never upsample the higher-GSD (reference) image; only the source
-
----
-
-## F08 — Overlapping Tile Generation
-
-**Component:** L1 / src/preprocessing/tiling.py
-**Description:** Split source and reference into overlapping tiles (512x512 px, 64 px overlap). Discard tiles smaller than half the tile size. Store tile grid coordinates in tiles.geojson.
-**Acceptance criteria:**
-- No tile boundary artifact in downstream matching (overlap ensures this)
-- Tile coordinates in tiles.geojson allow result reassembly
-- Tiles smaller than 256 px in either dimension are discarded
+- Component: Layer 1 (`src/preprocessing/masks.py`)
+- Description: Calculates a binary validity mask (`valid_mask.png`) for each image patch. Pixels are masked if brightness falls below the solar incidence threshold, if local spatial variance falls below flat-surface thresholds, or if pixels fall in cast shadow regions.
+- Acceptance Criteria:
+  - Masked pixel fraction remains between 5% and 30% for nominal scenes; anomalous ratios are flagged.
+  - Correspondences whose local support patches touch masked pixels are rejected across all stages.
+  - The mask is exported alongside preprocessed images.
 
 ---
 
-## F09 — Matcher M0: SIFT + RANSAC (always-on baseline)
+## F05. Radiometric Normalization
 
-**Component:** L2 / src/matching/sift.py
-**Description:** Tiled SIFT with Lowe ratio 0.75 -> DEGENSAC homography verification. Runs on EVERY pair. Serves as floor benchmark and fallback of last resort. ANMS SSC applied after detection, before description.
-**Acceptance criteria:**
-- Runs on 100% of pairs without crash
-- Produces at least 1 result per pair (even if inlier_count=0, which is a valid result)
-- Runtime and candidate count recorded in matches_raw.json
-
----
-
-## F10 — Matcher M1a: RIFT2 + Scale-Space Extension
-
-**Component:** L2 / src/matching/rift.py
-**Description:** Phase congruency detection (log-Gabor, Ns=4, No=6) + Maximum Index Map descriptor + multi-MIM rotation invariance + multi-octave log-Gabor scale-space extension (our addition to close RIFT's scale gap). ANMS SSC applied pre-description.
-**Scale-consistency filter (MANDATORY — implements D08 novelty):** After keypoint matching, reject any match where |log(scale_src / scale_ref) − log(gsd_ratio)| > 0.3, where gsd_ratio = src.gsd_m / ref.gsd_m from the PairRecord. Without this filter, the multi-octave scale-space extension has no implementation.
-**Polar limitation (DOCUMENTED):** RIFT2 is demonstrated failing (❌) on OHRC-NAC Polar in Traditional_vs_DeepLearning_FeatureMatching — the same sensor pair and exact hardest condition in this project. M1 is NOT the validated polar fallback. For CPU-only + low-crater-density + polar pairs, record `no_validated_primary_matcher=true`.
-**Acceptance criteria:**
-- Rotation invariance: 100% SR on a 72-pair synthetic 5-degree rotation sweep
-- Scale invariance: operates correctly on pairs with GSD ratio up to 5x after L1 pyramid reconciliation
-- Scale-consistency filter active: reject count > 0 on a GSD-mismatched pair (verifiable in pilot)
-- Matches_raw.json includes per-match confidence (NCC score)
-- Runtime recorded; flag if > 120 s per tile
-- `polar_validated: false` recorded in matches_raw.json metadata
-
-**Implementation note:** PC detection needs parameter tuning on lunar data (tau_pc). Multi-MIM costs No× compute at match time. The scale-space extension adds octaves above RIFT's original fixed scale.
+- Component: Layer 1 (`src/preprocessing/normalize.py`)
+- Description: Evaluates 2nd and 98th percentile intensity clipping followed by min-max scaling. Transfers the source patch mean and standard deviation to match reference statistics.
+- Acceptance Criteria:
+  - Mean and standard deviation of normalized source patch match reference values within 5%.
+  - Transformation parameters are logged in `meta.json`.
 
 ---
 
-## F10b — Matcher M1b: LNIFT (Pilot-Phase Benchmark)
+## F06. Sensor-Specific Preprocessing Branches
 
-**Component:** L2 / src/matching/lnift.py
-**Description:** LNIFT is benchmarked alongside RIFT2 (M1a) on the same pilot pairs. If LNIFT wins on pilot metrics, it is promoted to primary M1. Reported by supplementary_research.md as ~100x faster than RIFT with 99.9% SR vs 79.85% for RIFT2. Implements the same scale-consistency filter as M1a.
-**Acceptance criteria:**
-- Runs on same 3 pilot pairs as RIFT2; results compared in leaderboard
-- Same scale-consistency filter as F10 applied
-- Winner declared per pilot evaluation; DECISIONS.md D14 updated with outcome
-
----
-
-## F11 — Matcher M2: SuperPoint + LightGlue (learned, GPU-preferred)
-
-**Component:** L2 / src/matching/lightglue.py
-**Description:** SuperPoint keypoint detector + LightGlue matcher. Pretrained weights used (no lunar-specific retraining). GPU preferred; CPU fallback enabled. F2 checks mandatory (in-domain bounds + one-to-one constraint). Confidence per match from LightGlue output.
-**Acceptance criteria:**
-- F2 checks execute on every match result -- never disabled
-- Out-of-bounds and duplicate matches are rejected before writing matches_raw.json
-- CPU fallback activates automatically if GPU OOM or unavailable
-- Per-match confidence stored in matches_raw.json
+- Component: Layer 1 (`src/preprocessing/branches.py`)
+- Description: Executes sensor-tailored filtering:
+  - OHRC to NAC: CLAHE (clip limit 2.0, tile grid 8x8), optional contrast inversion, morphological dilation, and PCA reduction.
+  - TMC-2 to WAC: Histogram matching and CLAHE.
+  - Learned Matchers (M2/M3): Receives minimal percentile clipping only (F05); non-linear filtering branches are bypassed.
+- Acceptance Criteria:
+  - Selected branch strictly matches the configured sensor pair.
+  - Learned matchers never receive heavy non-linear filtering.
+  - Applied operations are recorded in `meta.json`.
 
 ---
 
-## F12 — Matcher M3: Crater-Geometry (CNSFM-style)
+## F07. GSD Reconciliation and Adaptive Interpolation
 
-**Component:** L2 / src/matching/crater.py
-**Description:** YOLOv9 crater detector (pretrained, transfer-learned from LROC NAC @ 0.5 m/px) -> Crater Neighborhood Structure Feature (CNSF) graph construction -> similarity-invariant topology matching -> MCR structural outlier removal. GATED: runs only when crater_density_per_km2 >= tau_c in BOTH images AND terrain_class in {highland, polar_highland, polar}.
-**CPU fallback:** When GPU unavailable, activate HoughCircles-based crater detection instead of YOLOv9. Record matcher_id as `crater_hough` (not `crater`) in all results.
-**Pre-flight recall check (MANDATORY before M3 as primary):** YOLOv9 is validated only at 0.5 m/px (NAC). OHRC (0.3 m/px) and TMC (5 m/px) are untested in all reviewed papers. Before M3 is trusted as primary on a new sensor, run recall on a small manually-verified crater patch for that sensor. Record `detector_validated: true/false` in matches_raw.json.
-**Acceptance criteria:**
-- Gate evaluation always runs first; skip decision recorded in matches_raw.json (gate_skip=true, reason)
-- crater_density field in PairRecord has unit craters/km2 — unitless value is a configuration error
-- No false activations in mare (crater_density_per_km2 < tau_c) pairs
-- When triggered, produces crater-based correspondences with topology confidence scores
-- `detector_validated` flag present in every matches_raw.json for M3
-- CPU fallback (crater_hough) activates automatically when GPU unavailable
+- Component: Layer 1 (`src/preprocessing/resample.py`)
+- Description: Pyramid resamples the coarser-resolution image to match the pixel scale of the finer-resolution image. Uses bilinear interpolation under grazing illumination (solar incidence >= 45 degrees) and bicubic interpolation on high-sun scenes.
+- Acceptance Criteria:
+  - Resampled spatial dimensions match within 5%.
+  - Upsampling is applied only to the coarser product.
+  - Selected interpolation mode is recorded in `meta.json`.
 
 ---
 
-## F13 — Adaptive Non-Maximal Suppression (ANMS SSC)
+## F08. Overlapping Tile Decomposition
 
-**Component:** L2 / src/selection/anms.py
-**Description:** SSC (Suppression via Square Covering) variant of ANMS. Applied pre-description inside M0 and M1 matchers. Suppresses weaker keypoints within a radius that adapts to hit a target keypoint budget.
-**Algorithm (Bailo et al., Pattern Recognition Letters 2018):**
-1. Sort all detected keypoints by response descending.
-2. For each keypoint k_i, find its nearest stronger neighbour (first j < i with response[j] > response[i]) using a KD-tree — O(n log n).
-3. The suppression radius r_i = distance to that stronger neighbour.
-4. Square-covering acceptance: select keypoints greedily in order of decreasing r_i, accepting k_i if no already-accepted keypoint lies within r_i — O(K·n) where K = budget.
-5. Stop when budget is reached or all keypoints are processed.
-**Acceptance criteria:**
-- No two selected keypoints are within the computed suppression radius of each other
-- Output budget matches config (allow ±5%)
-- Drop-in compatible after any OpenCV detector
-- Runs in O(n log n + K·n); flag if runtime > 1 s on a 2000-keypoint set
+- Component: Layer 1 (`src/preprocessing/tiling.py`)
+- Description: Partitions large footprints into overlapping processing tiles ($512 \times 512\text{ px}$ with 64 px overlap). Tiles with less than 50% valid data are discarded.
+- Acceptance Criteria:
+  - Overlap prevents boundary artifacts during global correspondence assembly.
+  - Tile geometries are exported to `tiles.geojson`.
+  - Tiles smaller than $256 \times 256\text{ px}$ are rejected.
 
 ---
 
-## F14 — Post-Match Grid-Based Coverage Enforcement
+## F09. Matcher M0: SIFT Baseline Floor
 
-**Component:** L3 / src/selection/spatial.py
-**Description:** After matching (L2), enforce spatial coverage using a NxN grid over the source image. Apply confidence filter, per-cell cap (max-N per cell), then coverage-aware greedy selection to hit budget K. Resolve one-to-many conflicts by keeping highest-confidence match. Report coverage and grid_density_std before and after.
-**Acceptance criteria:**
-- coverage after selection >= 0.60 (gate)
-- >= 25 matches after selection (gate)
-- grid_density_std reported in selection_stats.json
-- One-to-one constraint enforced on output
-
----
-
-## F15 — F2 Mandatory Checks (All Matchers)
-
-**Component:** L4 / src/registration/checks.py
-**Description:** Before any RANSAC step, apply mandatory F2 checks to every match set:
-1. In-domain bounds check: source xy must be within source image bounds + 10px buffer; same for reference
-2. One-to-one constraint: remove any source or reference coordinate that appears more than once (keep highest confidence)
-These checks are especially critical for M2 and M3 but apply to all matchers.
-**Acceptance criteria:**
-- No out-of-bounds match reaches DEGENSAC
-- No duplicate source or reference coordinate reaches DEGENSAC
-- Number of matches removed by F2 checks recorded in geometry.json
+- Component: Layer 2 (`src/matching/sift.py`)
+- Description: Difference-of-Gaussians feature detection with 128-dimensional gradient descriptors and Lowe ratio testing (0.75). Evaluated universally across all pairs to provide a performance floor and tie-breaker.
+- Acceptance Criteria:
+  - Runs across all pairs without runtime exception.
+  - Produces >= 50 candidates on textured scenes before spatial filtering.
+  - Serves as the fallback winner when alternative matchers fail.
 
 ---
 
-## F16 — DEGENSAC Geometric Verification + Model Ladder
+## F10. Matcher M1a: Multi-Octave Log-Gabor RIFT2
 
-**Component:** L4 / src/registration/ladder.py
-**Description:** Run DEGENSAC (degeneracy-aware RANSAC) with 10,000 iterations, 0.99999 confidence, t_gsd threshold. Apply model ladder: try similarity, then affine, then homography. Accept simplest model with inlier RMSE <= 1.0 px. Widen threshold x1.5 once on failure before tile-wise fallback.
-**Acceptance criteria:**
-- Degeneracy-aware RANSAC is used (not standard RANSAC) for all geometric verification
-- Model ladder level chosen is recorded in geometry.json (ladder_level field)
-- t_gsd_used recorded; ladder traversal recorded
-- inlier_ratio >= 0.05 and >= 20 inliers or the matcher is marked failed for this pair
-
----
-
-## F17 — Tile-wise Local Models (High-Latitude / High-Relief Fallback)
-
-**Component:** L4 / src/registration/tilewise.py
-**Description:** When latitude_center > ±55 degrees OR when terrain relief is estimated to be high, replace the global model with tile-wise local affine or homography models (512px tiles, 50% overlap, min 12 inliers per tile). Blend model boundaries using a Gaussian distance-weighted average.
-**Blend weighting formula:** For a pixel x in the overlap zone of tile T with centre c_T:
-```
-w_T(x) = exp( −‖x − c_T‖² / (2 · σ²) ),  σ = 256 px
-```
-The blended displacement at x is the weighted mean of all tile displacements whose coverage includes x. Weights are normalised to sum to 1. Do NOT use uniform averaging — it produces visible seams at tile boundaries.
-**Acceptance criteria:**
-- Trigger condition logged in geometry.json (tilewise=true, trigger_reason)
-- Boundary blending uses the Gaussian formula above with σ=256; no visible seams in warp output
-- Each tile model and its inlier count stored in tile_models array
+- Component: Layer 2 (`src/matching/rift.py`)
+- Description: Phase Congruency (PC) keypoint detection coupled with Maximum Index Map (MIM) descriptors and a multi-octave log-Gabor scale-space search to close RIFT's native scale sensitivity.
+- Acceptance Criteria:
+  - Achieves >= 90% success rate across non-polar terrain.
+  - Multi-scale search validates candidate pairs up to 4x GSD difference.
+  - Candidate records are output to `matches_raw.json`.
 
 ---
 
-## F18 — GCP Declustering and Z-Score Filtering
+## F11. Matcher M2: SuperPoint and LightGlue
 
-**Component:** L4 / src/registration/declustering.py
-**Description:** After RANSAC, enforce GSD-scaled minimum spacing between inlier matches, then apply Z-score residual filter (threshold 3.0) to remove outliers. Requires at least 20 matches for Z-score to run.
-**GSD-scaling (MANDATORY):** min_spacing_px is scaled by (ref_gsd_m / base_gsd_m) where base_gsd_m = 0.5 m (NAC baseline). Examples: NAC ref → 20 px; TMC ref (5 m) → ~200 px; IIRS ref (80 m) → ~3200 px. Without this scaling, physical GCP spacing varies wildly across sensor pairs — a real cross-sensor accuracy regression.
-**Acceptance criteria:**
-- No two output GCPs closer than gsd_scaled min_spacing_px in the reference image
-- GSD scaling applied and recorded: `gsd_scale_factor` in geometry.json
-- Z-score filter runs only when > 20 GCPs present; else only spacing filter applies
-- Final GCP count recorded in geometry.json
+- Component: Layer 2 (`src/matching/lightglue.py`)
+- Description: SuperPoint keypoint extraction combined with LightGlue transformer-based correspondence matching. Employs adaptive depth-width inference and per-match confidence filtering.
+- Acceptance Criteria:
+  - Generates correspondences across extreme illumination variations.
+  - Automatic fallback to CPU execution if CUDA hardware is unavailable.
+  - Enforces mandatory in-domain bounds checks and one-to-one constraints (F15).
 
 ---
 
-## F19 — Sub-pixel Refinement per Inlier
+## F12. Matcher M3: Quantitative Crater Geometry
 
-**Component:** L5 / src/refinement/local.py
-**Description:** For each DEGENSAC inlier, extract a 32x32 px patch around the coarse match location in both images. Apply Tukey or Gaussian apodization. Run local NCC or phase-only correlation (POC). Extract integer peak, fit 2D paraboloid to get sub-pixel displacement. Apply second-peak rejection. Accept if peak sharpness >= tau_q; else keep coarse coordinate. Report RMSE before and after.
-**Second-peak rejection (MANDATORY — restored from v1.1):** After computing the correlation surface, reject the refinement if either:
-- Window variance < tau_v (flat/featureless patch — NCC result is noise)
-- A second local peak exists with amplitude > 0.80 × primary peak (ambiguous / repetitive texture)
-This check is a lunar-specific safety measure for crater-field repetitive texture causing false correlation peaks. Nothing else in the pipeline covers this failure mode.
-**Sharpness threshold note (PRIORITY TUNE):** Default tau_q = 0.15. v1.1 used 0.45 (3× stricter). Validate on pilot pairs before trusting refinement_gain metrics — the two values produce materially different refinement success rates.
-**Acceptance criteria:**
-- Apodization is Tukey or Gaussian (NEVER Blackman — configuration hard-checks this)
-- Second-peak rejection check runs on every correlation surface
-- refine_success flag set per match; sharpness value and second_peak_ratio stored
-- RMSE before and after refinement reported in matches_refined.json
-- >= 70% of inliers refine successfully (if below, flag pair as partial_refinement=true)
-- refinement_gain (before minus after RMSE) is positive on >= 60% of test pairs (validates L5 is useful)
+- Component: Layer 2 (`src/matching/crater.py`)
+- Description: YOLOv9 crater detection paired with Crater Neighborhood Structure Feature (CNSF) topological graph matching. Gated: executes only when crater density >= 3.0 craters/km^2 in both images and terrain is highland or polar.
+- Acceptance Criteria:
+  - Gating checks execute first; bypassed executions record `gate_skip: true` in `matches_raw.json`.
+  - Zero false activations in low-density mare terrain.
+  - Automatically switches to Hough circle detection on CPU environments.
 
 ---
 
-## F20 — Registered Product Generation
+## F13. Adaptive Non-Maximal Suppression (ANMS SSC)
 
-**Component:** L6 / scripts/register.py
-**Description:** Apply the fitted model(s) to warp the source image onto the reference coordinate grid. Output a GeoTIFF with reference CRS. Produce a match-points CSV and GCP list.
-**Acceptance criteria:**
-- Warp valid over >= 90% of footprint
-- GeoTIFF opens correctly in QGIS/GDAL; CRS matches reference
-- CSV has columns: src_col, src_row, ref_col, ref_row, lon, lat, residual_px
-- GCP file loadable by GDAL gdal_translate -gcp
-
----
-
-## F21 — QC Artifact Generation
-
-**Component:** L6 / scripts/register.py
-**Description:** Generate three QC images per (pair, matcher): checkerboard interleaving of source/registered and reference tiles, match overlay on source with color-coded residuals, residual heat map showing geographic distribution of registration error.
-**Acceptance criteria:**
-- Checkerboard tile size: 64 px
-- Match overlay: green < 0.5 px, yellow 0.5-1.0 px, red > 1.0 px
-- Residual heat map: sigma per match, Gaussian spread radius 3 px
-- All three artifacts written to results/<pair_id>/<matcher>/
+- Component: Layer 2 (`src/selection/anms.py`)
+- Description: Suppression via Square Covering (SSC) applied to candidate keypoints prior to descriptor calculation inside M0 and M1.
+- Acceptance Criteria:
+  - Keypoint output matches target budget within +-5%.
+  - No two selected keypoints fall within the adaptive suppression radius.
+  - Execution complexity scales as $O(n \log n)$.
 
 ---
 
-## F22 — Evaluation Harness and Leaderboard
+## F14. Post-Match Grid Budgeting and Coverage Selection
 
-**Component:** L7 / src/evaluation/
-**Description:** Compute all metrics (RMSE on held-out GT, pct_lt_1px, pct_lt_0p5px, MedAE, inlier count/ratio, spatial_coverage, grid_density_std, refinement_gain, runtime) per (pair x matcher). Aggregate by (matcher x sensor_pair x stratum). Write leaderboard.csv. Perform leakage audit. Write per-pair JSON results.
-**Acceptance criteria:**
-- RMSE computed ONLY on GT partition="eval" checkpoints
-- Leakage audit passes before any number is printed
-- Polar and high-latitude strata are NEVER aggregated away; always reported separately
-- leaderboard.csv updated atomically (write to temp, rename)
-
----
-
-## F23 — Arbitration Log
-
-**Component:** L7 / src/evaluation/arbitration.py
-**Description:** For each pair, determine the winning matcher (primary or fallback per the arbitration policy in ARCHITECTURE.md §4). Record: which matcher won, which triggered the gate, inlier_ratio of primary, whether fallback occurred, and reason.
-**Acceptance criteria:**
-- results/arbitration.log contains one entry per pair
-- Every fallback event (primary below floor) is recorded with primary matcher name and inlier_ratio
-- The winning matcher for each pair is reflected in the leaderboard aggregate
+- Component: Layer 3 (`src/selection/spatial.py`)
+- Description: Partitions the matched domain into an $8 \times 8$ grid. Imposes a cap of at most 5 correspondences per cell up to an aggregate budget of 250 matches.
+- Acceptance Criteria:
+  - Post-selection spatial coverage >= 0.60 across valid grid cells.
+  - Grid density standard deviation decreases post-selection.
+  - Filtered correspondences are exported to `matches_selected.json`.
 
 ---
 
-## F24 — IIRS Photometric Correction and Registration Module
+## F15. Mandatory In-Domain Bounds and Uniqueness Checks
 
-**Component:** IIRS module / src/matching/iirs.py
-**Description:** Separate module (iirs_wac.yaml config) for IIRS data. Steps: (1) read QUB product, (2) apply photometric correction for incidence/emission/phase angle variation using Hapke model, (3) select registration band (nearest to WAC 643nm), (4) SIFT-class matching against WAC reference, (5) standard L3-L7 pipeline with IIRS-specific accuracy targets.
-**Acceptance criteria:**
-- Module is NEVER invoked by the ohrc_nac or tmc_wac pipeline configs
-- Photometric correction runs before any feature operation
-- Accuracy target: RMSE < 80 m absolute (sub-pixel at 80 m IIRS GSD)
-- Module has its own config, its own results dir, and its own leaderboard rows clearly labeled "IIRS-WAC"
-
----
-
-## F25 — Provenance and Reproducibility Logging
-
-**Component:** All modules
-**Description:** Every artifact JSON must include: config_hash (hash of the config YAML used), code_commit (git commit sha), matcher_params_hash (hash of all matcher parameters), timestamps (created_at), seed (RANSAC and selection seeds). manifest.jsonl and products.jsonl are append-only; no line is deleted.
-**Acceptance criteria:**
-- Given a pair_id and a code commit, all intermediate outputs are reproducible from the original raw files
-- No artifact is overwritten without --force flag and explicit user confirmation
-- Leakage audit can reconstruct the train/test split from manifest.jsonl alone
+- Component: Layer 4 (`src/registration/checks.py`)
+- Description: Enforces geometric sanity rules prior to model fitting: coordinates must lie within image boundaries (+-10 px buffer), and duplicate point mappings are removed.
+- Acceptance Criteria:
+  - Zero out-of-bounds coordinates reach geometric estimation.
+  - Zero duplicate coordinates reach geometric estimation.
+  - Removed match counts are recorded in `geometry.json`.
 
 ---
 
-## F26 — Matcher Selection Model (MSM) & Feature Vector (L1.5)
+## F16. DEGENSAC Verification and Hierarchical Model Ladder
 
-**Component:** L1.5 / src/selector/features.py, src/selector/model.py
-**Description:** Predict optimal matcher pipeline using a lightweight LightGBM multi-class model on a 13-dimensional scene feature vector extracted from PairRecord and L1 metadata. Employs dual-threshold confidence routing ($\tau_{high}=0.65, \tau_{low}=0.40$), rule-based safety gating, and graceful escalation.
-**Feature Vector Definition (13 features):**
-1. `sensor_pair_enc` (int): 0=OHRC-NAC, 1=TMC-WAC, 2=IIRS-WAC
-2. `gsd_ratio` (float): GSD ratio source/ref $\in (0, 1.0]$
-3. `latitude_abs` (float): Bounding box centroid absolute latitude $[0.0^\circ, 90.0^\circ]$
-4. `delta_solar_azimuth` (float): Clamped azimuth difference $[0.0^\circ, 180.0^\circ]$
-5. `terrain_class_enc` (int): 0=highland, 1=maria, 2=polar, 3=mixed
-6. `crater_density` (float): Log-transformed crater density $\log(1 + \text{craters/Mpx})$
-7. `masked_fraction` (float): Fraction of image masked by shadow/validity mask $[0.0, 1.0]$
-8. `overlap_fraction` (float): Spatial overlap fraction $(0.0, 1.0]$
-9. `src_texture_contrast` (float): Mean local std in $8\times 8$ windows (source)
-10. `ref_texture_contrast` (float): Mean local std in $8\times 8$ windows (reference)
-11. `src_mean_gradient` (float): Mean Sobel gradient magnitude (source)
-12. `ref_mean_gradient` (float): Mean Sobel gradient magnitude (reference)
-13. `tile_count` (int): Active non-discarded tile count post-reconciliation
-
-**Acceptance criteria:**
-- Feature extraction completes in $< 100\text{ ms}$ per pair
-- MD5 feature vector hash generated and logged in `selector.json`
-- Hard gates strictly enforced (M3 suppressed if crater density $< \tau_c$; M2 CPU fallback if no GPU)
-- Dual-threshold routing correctly dispatches single matcher ($\ge 0.65$), dual matchers ($[0.40, 0.65)$), or all matchers ($< 0.40$)
+- Component: Layer 4 (`src/registration/ladder.py`)
+- Description: Degeneracy-aware RANSAC (DEGENSAC) with 10,000 iterations and 0.99999 confidence. Evaluates models in order: Similarity (4 DoF), Affine (6 DoF), Homography (8 DoF). Accepts the simplest model achieving residual $\text{RMSE} \le 1.0\text{ px}$.
+- Acceptance Criteria:
+  - Employs degeneracy-aware sampling to prevent planar collapse on lunar maria.
+  - Selected ladder level is recorded in `geometry.json`.
+  - Requires >= 20 inliers and >= 5% inlier ratio.
 
 ---
 
-## F27 — Geo-Cell Disjoint MSM Training and Acceptance Evaluation
+## F17. Tile-Wise Local Model Partitioning
 
-**Component:** L1.5 + L7 / scripts/train_msm.py, src/evaluation/msm_eval.py
-**Description:** Train LightGBM multi-class model on ground-truth oracle best matcher labels from train split using strictly disjoint $10^\circ \times 10^\circ$ geographic cell cross-validation (F15). Validate that selector passes 8 Acceptance Criteria (AC1–AC8) before production activation.
-**Acceptance criteria (AC1–AC8):**
-1. **AC1 Selector Accuracy:** $\ge 70.0\%$ match with oracle best matcher on test split
-2. **AC2 Top-2 Accuracy:** $\ge 85.0\%$ oracle best matcher included in top 2 choices
-3. **AC3 Mean RMSE Degradation:** $\le +0.10\text{ px}$ vs oracle best matcher
-4. **AC4 Max Single-Pair RMSE Degradation:** $\le +0.50\text{ px}$ across all test pairs
-5. **AC5 Runtime Reduction:** $\ge 50.0\%$ reduction in total correspondence search runtime
-6. **AC6 Fallback Rate:** $\le 20.0\%$ escalation to full safe mode
-7. **AC7 Feature Importance:** Top 5 features have non-zero split/gain importance
-8. **AC8 Leakage Audit:** Zero geo-cell overlap verified by `leakage_audit --check-msm`
+- Component: Layer 4 (`src/registration/tilewise.py`)
+- Description: Bypasses global models in favor of tile-wise local transformations (512 px tiles, 50% overlap) when centroid latitude exceeds $\pm 55^\circ$ or across rugged topography. Blends boundaries using Gaussian distance weights:
 
+$$w_T(\mathbf{x}) = \exp\left(-\frac{\|\mathbf{x} - \mathbf{c}_T\|^2}{2\sigma^2}\right), \quad \sigma = 256\text{ px}$$
+
+- Acceptance Criteria:
+  - Activation condition logged in `geometry.json` (`tilewise: true`).
+  - Seamless boundary transitions without visible mosaic seams.
+  - Minimum of 12 inliers required per active local tile.
+
+---
+
+## F18. GSD-Scaled GCP Declustering and Residual Outlier Filtering
+
+- Component: Layer 4 (`src/registration/declustering.py`)
+- Description: Enforces minimum spatial separation between inlier control points scaled by resolution:
+
+$$\text{Spacing} = \text{base\_spacing} \cdot \left(\frac{\text{GSD}_{\text{ref}}}{\text{GSD}_{\text{base}}}\right)$$
+
+Applies a $3\sigma$ Z-score filter on transformation residuals when inlier counts exceed 20.
+- Acceptance Criteria:
+  - Output control points respect resolution-scaled spatial separation.
+  - Z-score filtering eliminates statistical residual outliers.
+  - Final GCP manifests are recorded in `geometry.json`.
+
+---
+
+## F19. Sub-Pixel Refinement via Phase Correlation
+
+- Component: Layer 5 (`src/refinement/local.py`)
+- Description: Extracts $32 \times 32\text{ px}$ windows around coarse inliers. Applies Tukey window apodization ($\alpha = 0.50$), 3-level Gaussian pyramids, and 2D paraboloid peak interpolation. Rejects ambiguous multimodal peaks where secondary peaks exceed 80% of primary intensity.
+- Acceptance Criteria:
+  - Apodization uses Tukey or Gaussian functions; Blackman windows are forbidden.
+  - Multimodal peak rejection filters repetitive crater patterns.
+  - Refinement achieves positive gain ($\text{RMSE}_{\text{before}} - \text{RMSE}_{\text{after}} > 0$) on >= 60% of test pairs.
+  - Exported to `matches_refined.json`.
+
+---
+
+## F20. Orthorectified Cartographic Product Export
+
+- Component: Layer 6 (`scripts/register.py`)
+- Description: Applies fitted geometric transformations to project source imagery onto the reference cartographic coordinate frame, exporting 16-bit GeoTIFFs and GCP manifests.
+- Acceptance Criteria:
+  - Valid image warp encompasses >= 90% of overlapping footprint.
+  - Exported GeoTIFFs verify cleanly in standard GIS environments (QGIS/GDAL).
+  - GCP list formatted for standard GDAL translation toolchains.
+
+---
+
+## F21. Quality Control Visualization Artifacts
+
+- Component: Layer 6 (`scripts/register.py`)
+- Description: Generates diagnostic graphics: 64 px alternating checkerboards, correspondence vector overlays color-coded by residual magnitude (<0.5 px green, 0.5-1.0 px yellow, >1.0 px red), and Gaussian residual heatmaps ($\sigma = 3\text{ px}$).
+- Acceptance Criteria:
+  - All three diagnostic images written to `results/<pair_id>/<matcher>/`.
+  - Checkerboard alignment confirms sub-pixel rim continuity.
+
+---
+
+## F22. Evaluation Harness and Competitive Leaderboard
+
+- Component: Layer 7 (`src/evaluation/`)
+- Description: Computes RMSE against held-out control points in the `eval` partition, along with $\text{pct\_lt\_1px}$, $\text{pct\_lt\_0p5px}$, MedAE, inlier counts, coverage, and execution times. Compiles `results/leaderboard.csv`.
+- Acceptance Criteria:
+  - Metrics computed strictly on the `eval` partition.
+  - Spatial leakage audit must pass prior to leaderboard generation.
+  - Stratified reporting preserves high-latitude and polar results independently.
+
+---
+
+## F23. Production Winner Arbitration
+
+- Component: Layer 7 (`src/evaluation/arbitration.py`)
+- Description: Determines the production winner for each pair according to configured arbitration policies. Records candidate metrics, fallback events, and winning algorithms in `results/arbitration.log`.
+- Acceptance Criteria:
+  - Every evaluated pair writes an entry to `results/arbitration.log`.
+  - Fallback triggers are logged with candidate inlier ratios and residual errors.
+
+---
+
+## F24. Dedicated IIRS Hyperspectral Registration Module
+
+- Component: IIRS Module (`src/matching/iirs.py`)
+- Description: Standalone module (`configs/iirs_wac.yaml`) for processing Chandrayaan-2 IIRS hyperspectral cubes (0.8 to 5.0 um). Applies Hapke photometric phase-angle correction, isolates optimal continuum bands near 1.6 um, and executes SIFT-class registration against LRO WAC reference mosaics.
+- Acceptance Criteria:
+  - Module remains completely isolated from panchromatic pipelines.
+  - Photometric phase correction executes prior to feature extraction.
+  - Absolute registration error bounded below 80 meters (sub-pixel at native IIRS GSD).
+
+---
+
+## F25. Provenance, Configuration, and Reproducibility Tracking
+
+- Component: Core Framework (All modules)
+- Description: Binds configuration hashes, git commit SHAs, random seeds, and timestamps into all exported JSON artifacts.
+- Acceptance Criteria:
+  - Any intermediate artifact can be deterministically reproduced given raw inputs and commit hash.
+  - Ingestion catalogs (`manifest.jsonl`) remain strictly append-only.
+
+---
+
+## F26. Matcher Selection Model (MSM) Feature Vector
+
+- Component: Layer 1.5 (`src/selector/features.py`, `src/selector/model.py`)
+- Description: Evaluates a 13-dimensional scene vector extracted from `PairRecord` and L1 `meta.json`. LightGBM meta-classifier dispatches execution via dual confidence thresholds ($\tau_{\text{high}} = 0.65, \tau_{\text{low}} = 0.40$).
+- Feature Vector Schema (13 dimensions):
+  1. `sensor_pair_enc` (int): 0 = OHRC-NAC, 1 = TMC-WAC, 2 = IIRS-WAC
+  2. `gsd_ratio` (float): Resolution ratio $\text{GSD}_{\text{src}} / \text{GSD}_{\text{ref}}$
+  3. `latitude_abs` (float): Absolute centroid latitude in degrees
+  4. `delta_solar_azimuth` (float): Azimuth angle difference $[0.0^\circ, 180.0^\circ]$
+  5. `terrain_class_enc` (int): Encoded terrain type (highland, mare, polar, mixed)
+  6. `crater_density` (float): Logarithmic crater density $\log(1 + \rho)$
+  7. `masked_fraction` (float): Shadow and invalid pixel fraction
+  8. `overlap_fraction` (float): Footprint spatial overlap ratio
+  9. `src_texture_contrast` (float): Mean local standard deviation in source patch
+  10. `ref_texture_contrast` (float): Mean local standard deviation in reference patch
+  11. `src_mean_gradient` (float): Mean Sobel gradient magnitude in source patch
+  12. `ref_mean_gradient` (float): Mean Sobel gradient magnitude in reference patch
+  13. `tile_count` (int): Active processing tile count
+- Acceptance Criteria:
+  - Feature extraction completes in under 100 ms.
+  - Hard gates clamp $P(\text{Crater}) = 0.0$ when crater density $< \tau_c$.
+  - Generates `results/<pair_id>/selector.json`.
+
+---
+
+## F27. Disjoint Geographic MSM Training and Certification
+
+- Component: Layer 1.5 and Layer 7 (`scripts/train_msm.py`, `src/evaluation/msm_eval.py`)
+- Description: Trains the LightGBM classifier on oracle winner labels using strictly disjoint $10^\circ \times 10^\circ$ geographic cell cross-validation. Enforces all 8 Acceptance Criteria (AC1 through AC8) prior to production activation.
+- Acceptance Criteria (AC1 through AC8):
+  - AC1: Classification accuracy >= 70.0% against oracle best matcher.
+  - AC2: Top-2 prediction accuracy >= 85.0%.
+  - AC3: Mean RMSE degradation relative to oracle <= +0.10 px.
+  - AC4: Maximum single-pair RMSE degradation <= +0.50 px.
+  - AC5: Wall-clock execution time reduction >= 50.0%.
+  - AC6: Safe-mode fallback rate <= 20.0%.
+  - AC7: Feature gain analysis confirms predictive utility across top 5 features.
+  - AC8: Spatial leakage audit passes with zero cell overlap.
