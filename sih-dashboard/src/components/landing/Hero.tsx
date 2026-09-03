@@ -1,88 +1,85 @@
 import React from 'react';
-import { ArrowRight } from 'lucide-react';
-import { heroImg } from '../../data/lunarisDatasets';
-import { ChandrayaanViewer } from './ChandrayaanViewer';
+import { ChevronRight } from 'lucide-react';
 
 interface HeroProps {
   onNext: () => void;
   onLaunchWorkbench?: () => void;
+  isLaunching?: boolean;
 }
 
-export const Hero: React.FC<HeroProps> = ({ onNext, onLaunchWorkbench }) => {
-
+export const Hero: React.FC<HeroProps> = ({ onNext, onLaunchWorkbench, isLaunching = false }) => {
   return (
     <section
       id="overview"
-      className="relative w-full min-h-[100vh] bg-[#07090C] overflow-hidden flex flex-col justify-between pt-20 md:pt-24 pb-6 px-4 sm:px-6 md:px-8 lg:px-12 border-b border-subtle select-none"
+      className="relative w-full min-h-[100vh] bg-transparent overflow-hidden flex flex-col justify-between pt-20 md:pt-24 pb-8 px-6 sm:px-10 lg:px-16 border-b border-white/[0.08]"
     >
-      {/* Background Cinematic Lunar Imagery with Smooth Continuous Zoom In / Zoom Out Breathing Illusion */}
-      <div className="absolute inset-0 z-0 pointer-events-none overflow-hidden select-none">
+      {/* Left Column: Clean Typography (Selectable text, does not rotate Moon!) */}
+      <div className="relative z-10 max-w-7xl mx-auto w-full my-auto flex-1 flex flex-col justify-center py-6 pointer-events-none">
         <div
-          className="absolute inset-0 w-full h-full animate-moon-zoom-continuous"
-          style={{ transformOrigin: 'center center' }}
+          className={`w-full max-w-[420px] sm:max-w-[480px] lg:max-w-xl flex flex-col items-start text-left pointer-events-auto select-text transition-all duration-700 ${
+            isLaunching ? 'opacity-0 -translate-x-12 pointer-events-none' : 'opacity-100 translate-x-0'
+          }`}
         >
-          <img
-            src={heroImg}
-            alt="Lunar Surface Panorama"
-            className="w-full h-full object-cover object-center lg:object-[65%_center] opacity-60 filter grayscale contrast-125 brightness-90"
-            referrerPolicy="no-referrer"
-          />
-        </div>
-
-        <div className="absolute inset-0 pointer-events-none opacity-15 overflow-hidden">
-          <div className="w-full h-full bg-[radial-gradient(circle_at_65%_50%,rgba(214,195,139,0.25)_0%,transparent_70%)]"></div>
-        </div>
-
-        <div className="absolute inset-0 bg-gradient-to-t from-[#07090C] via-[#07090C]/60 to-[#07090C]/90"></div>
-        <div className="absolute inset-0 bg-gradient-to-r from-[#07090C] via-[#07090C]/75 to-transparent"></div>
-        <div className="absolute inset-0 lunar-noise-overlay opacity-40"></div>
-        <div className="absolute inset-0 grid-lines-lunar opacity-30"></div>
-      </div>
-
-      {/* Main Hero Content Grid: Left Title + Right 3D Interactive Chandrayaan Spacecraft */}
-      <div className="relative z-10 max-w-7xl mx-auto w-full grid grid-cols-1 lg:grid-cols-12 gap-8 items-center my-auto flex-1">
-        
-        {/* LEFT SIDE: Clean Bold ECLIPSE Title with Individual Interactive Letter Buttons */}
-        <div className="lg:col-span-6 flex flex-col items-start text-left overflow-visible">
-          <h1 className="font-headline tracking-[0.03em] uppercase text-5xl sm:text-7xl md:text-8xl lg:text-[92px] xl:text-[104px] font-extrabold leading-[1.1] select-none m-0 p-0 flex items-center overflow-visible py-2 bg-transparent border-0">
-            {'ECLIPSE'.split('').map((letter, idx) => (
-              <span
-                key={idx}
-                role="button"
-                tabIndex={0}
-                data-magnetic="false"
-                onClick={onLaunchWorkbench || onNext}
-                onKeyDown={(e) => e.key === 'Enter' && (onLaunchWorkbench ? onLaunchWorkbench() : onNext())}
-                className="eclipse-letter-btn"
-                aria-label={`Letter ${letter} - Launch Main Application`}
-                title="Launch ECLIPSE Dashboard"
-              >
-                {letter}
-              </span>
-            ))}
+          {/* Grand Problem Statement Headline */}
+          <h1 className="font-headline tracking-[-0.035em] text-3xl sm:text-4xl md:text-5xl lg:text-[56px] font-bold text-white mb-4 leading-[1.08] select-text">
+            Multi-Sensor Lunar <br />
+            <span className="text-[#86868b]">Image Registration.</span>
           </h1>
-        </div>
 
-        {/* RIGHT SIDE: Compact Hyperrealistic 8K Chandrayaan-2 Spacecraft */}
-        <div className="lg:col-span-6 relative flex items-center justify-center lg:justify-end">
-          <ChandrayaanViewer onLaunchWorkbench={onLaunchWorkbench} />
+          {/* Descriptive Copy */}
+          <p className="font-sans text-sm sm:text-base md:text-lg text-[#A1A1A6] leading-relaxed max-w-[340px] sm:max-w-md lg:max-w-lg mb-8 font-normal select-text">
+            Autonomous alignment connecting Chandrayaan-2 high-resolution payloads (OHRC, TMC-2, IIRS) with global LRO baselines. Built to withstand extreme polar illumination and scale disparities.
+          </p>
+
+          {/* Action Group */}
+          <div className="flex items-center gap-5 mb-10">
+            <button
+              onClick={onLaunchWorkbench}
+              disabled={isLaunching}
+              className="px-6 py-3 rounded-full bg-white text-black font-semibold text-sm hover:bg-[#E5E5EA] active:scale-[0.98] transition-all cursor-pointer shadow-sm shrink-0"
+            >
+              {isLaunching ? 'Entering Orbit...' : 'Launch 3D Workbench'}
+            </button>
+            <button
+              onClick={onNext}
+              disabled={isLaunching}
+              className="inline-flex items-center gap-1 text-sm font-medium text-[#2997FF] hover:text-[#70B4FF] transition-colors cursor-pointer group shrink-0"
+            >
+              <span>Explore the pipeline</span>
+              <ChevronRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" />
+            </button>
+          </div>
+
+          {/* Minimal Stats Grid */}
+          <div className="flex items-baseline gap-6 sm:gap-10 pt-6 border-t border-white/10 w-full max-w-md select-text">
+            <div>
+              <div className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight text-white select-text">0.010 px</div>
+              <div className="text-xs text-[#86868b] mt-1 font-sans select-text">Accuracy RMSE</div>
+            </div>
+            <div className="h-8 w-px bg-white/10" />
+            <div>
+              <div className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight text-white select-text">100%</div>
+              <div className="text-xs text-[#86868b] mt-1 font-sans select-text">Crater inliers</div>
+            </div>
+            <div className="h-8 w-px bg-white/10" />
+            <div>
+              <div className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight text-white select-text">42 ms</div>
+              <div className="text-xs text-[#86868b] mt-1 font-sans select-text">Pipeline latency</div>
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* Overview Page Bottom Bar with minimal NEXT button */}
-      <div className="relative z-10 max-w-7xl mx-auto w-full pt-2 sm:pt-4 flex items-center justify-between border-t border-subtle">
-        <div className="font-mono-tech text-[10px] text-[#8B908F] uppercase tracking-widest hidden sm:block">
-          CHANDRAYAAN • SECTION 01 / 05 — MISSION OVERVIEW
-        </div>
-
+      {/* Bottom Bar: Clean Subtle Footer */}
+      <div className="relative z-10 max-w-7xl mx-auto w-full pt-4 flex items-center justify-between border-t border-white/[0.08] text-xs text-[#86868b] font-sans">
+        <div>Problem Statement 26166 • Autonomous Precision Engine</div>
         <button
-          id="overview-next-button"
           onClick={onNext}
-          className="group inline-flex items-center gap-3 text-xs md:text-sm font-sans font-semibold tracking-[0.18em] text-[#E7E3D9] hover:text-[#D6C38B] py-1.5 sm:py-2 px-4 rounded-full border border-subtle hover:border-[#D6C38B]/50 bg-[#0D1116]/80 hover:bg-[#0D1116] transition-all ml-auto focus:outline-none cursor-pointer"
-          aria-label="Navigate to Pipeline page"
+          disabled={isLaunching}
+          className="hover:text-white transition-colors cursor-pointer flex items-center gap-1 pointer-events-auto"
         >
-          <span>NEXT: PIPELINE</span>
-          <ArrowRight className="w-4 h-4 text-[#D6C38B] group-hover:translate-x-1.5 transition-transform duration-300" />
+          <span>Next: Pipeline Architecture</span>
+          <ChevronRight className="w-3.5 h-3.5" />
         </button>
       </div>
     </section>

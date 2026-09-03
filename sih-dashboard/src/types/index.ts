@@ -22,12 +22,12 @@ export interface ScenePreset {
   lat: number;
   lon: number;
   height: number; // camera altitude in meters
-  terrainClass: TerrainClass;
-  craterDensity: number;
-  solarIncidenceDeg: number;
-  solarAzimuthDeg: number;
-  gsdM: number;
-  overlayOpacity: number;
+  terrainClass?: TerrainClass;
+  craterDensity?: number;
+  solarIncidenceDeg?: number;
+  solarAzimuthDeg?: number;
+  gsdM?: number;
+  overlayOpacity?: number;
   description: string;
 }
 
@@ -93,9 +93,28 @@ export interface SLZDiagnostic {
   boulderPassRate: number;
   overallSafetyScore: number; // 0-100
   goNoGo: 'GO' | 'NO-GO' | 'MARGINAL';
+  terrainRoughnessCm?: number;
+  craterDensityKm2?: number;
+}
+
+export interface PipelineOptions {
+  activeMatcher: MatcherType;
+  adaptiveMsm: boolean;
+  clahe: boolean;
+  percentileClipping: boolean;
+  morphologicalGradients: boolean;
+  pcaBandReduction: boolean;
+  ransacThreshold?: number;
+  maxFeatures?: number;
+  confidenceThreshold?: number;
 }
 
 export interface LayerVisibility {
+  basemap: boolean;
+  dem: boolean;
+  waterIce: boolean;
+  craters: boolean;
+  grid: boolean;
   ohrc: boolean;
   tmc2Slope: boolean;
   iirsHyperspectral: boolean;
@@ -118,21 +137,65 @@ export interface CraterDetail {
   diameterKm: number;
   depthKm: number;
   region: string;
-  // Inclination & Slopes
   floorInclinationDeg: number;
   wallSlopeDeg: number;
   orbitInclinationDeg: number;
   solarIncidenceDeg: number;
   solarAzimuthDeg: number;
-  // Water & Ice Telemetry
-  waterAbsorptionDepthPct: number; // e.g. 14.2%
-  waterIceConcentrationWtPct: number; // e.g. 4.8 wt%
-  waterIcePpm: number; // e.g. 48000 ppm
-  psrStatus: 'Permanently Shadowed (PSR)' | 'Partial Cold Trap' | 'Fully Illuminated' | 'Micro Cold Traps';
-  subsurfaceHydrationLevel: 'Extreme' | 'High' | 'Moderate' | 'Low' | 'Trace';
+  waterAbsorptionDepthPct: number;
+  waterIceConcentrationWtPct: number;
+  waterIcePpm: number;
+  psrStatus: string;
+  subsurfaceHydrationLevel: string;
   surfaceTempKelvin: number;
-  frostIndex: number; // 0 - 100
+  frostIndex: number;
   spectrometerBand: number;
   description: string;
+  // Direct backend snake_case aliases
+  diameter_km?: number;
+  depth_km?: number;
+  floor_inclination_deg?: number;
+  wall_slope_deg?: number;
+  orbit_inclination_deg?: number;
+  solar_incidence_deg?: number;
+  solar_azimuth_deg?: number;
+  water_absorption_depth_pct?: number;
+  water_ice_concentration_wt_pct?: number;
+  water_ice_ppm?: number;
+  psr_status?: string;
+  subsurface_hydration_level?: string;
+  surface_temp_kelvin?: number;
+  frost_index?: number;
+  spectrometer_band?: number;
 }
 
+export const PIPELINE_STAGE_LABELS: Record<string, string> = {
+  idle: 'Ready',
+  ingesting: 'Ingesting & Calibrating (L0)',
+  graph_matching: 'Graph Matching — LightGlue M2 (L2)',
+  magsac: 'MAGSAC++ Geometric Verification (L4)',
+  warping: 'Warping → GeoTIFF (L6)',
+  done: 'Co-registration Complete',
+};
+
+export interface MatcherParameters {
+  sift: {
+    n_features: number;
+    ratio_thresh: number;
+    contrast_threshold?: number;
+  };
+  rift2: {
+    n_scale: number;
+    n_orient: number;
+  };
+  lnift: {
+    patch_size: number;
+  };
+  lightglue: {
+    max_num_keypoints: number;
+  };
+  crater: {
+    model_path: string;
+    min_diameter_px: number;
+  };
+}

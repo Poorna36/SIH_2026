@@ -129,7 +129,7 @@ export interface PipelineResult {
 }
 
 export interface MatcherConfig {
-  enabled: boolean;
+  enabled?: boolean;
   [key: string]: unknown;
 }
 
@@ -263,6 +263,14 @@ export async function getMatchersConfig(): Promise<MatchersConfig | null> {
   return apiFetch<MatchersConfig>('/api/config/matchers');
 }
 
+/** Update and persist matcher configuration */
+export async function updateMatchersConfig(config: MatchersConfig): Promise<Record<string, unknown> | null> {
+  return apiFetch<Record<string, unknown>>('/api/config/matchers', {
+    method: 'POST',
+    body: JSON.stringify(config),
+  });
+}
+
 /** Get all configs merged */
 export async function getAllConfigs(): Promise<Record<string, unknown> | null> {
   return apiFetch<Record<string, unknown>>('/api/config/all');
@@ -288,7 +296,31 @@ export async function getKeypointMatches(pairId: string): Promise<BackendKeypoin
   return apiFetch<BackendKeypointMatch[]>(`/api/science/keypoints/${encodeURIComponent(pairId)}`);
 }
 
-/** Get full lunar crater catalog */
-export async function getCraterCatalog(): Promise<BackendCraterDetail[] | null> {
-  return apiFetch<BackendCraterDetail[]>('/api/science/craters/');
+export interface BackendTelemetryDiagnostic {
+  pair_id: string;
+  rmse_px: number;
+  ssim: number;
+  inlier_ratio: number;
+  inlier_count: number;
+  candidate_count: number;
+  spatial_coverage: number;
+  grid_density_std: number;
+  refinement_gain_px: number;
+  solar_incidence_deg: number;
+  solar_emission_deg: number;
+  solar_azimuth_deg: number;
+  matcher_winner: string;
+  runtime_s: number;
+  ladder_level: number;
+}
+
+/** Get authentic co-registration telemetry */
+export async function getTelemetryData(pairId: string): Promise<BackendTelemetryDiagnostic | null> {
+  return apiFetch<BackendTelemetryDiagnostic>(`/api/science/telemetry/${encodeURIComponent(pairId)}`);
+}
+
+/** Get full lunar crater catalog, optionally with search query */
+export async function getCraterCatalog(query?: string): Promise<BackendCraterDetail[] | null> {
+  const url = query && query.trim() ? `/api/science/craters/?q=${encodeURIComponent(query.trim())}` : '/api/science/craters/';
+  return apiFetch<BackendCraterDetail[]>(url);
 }

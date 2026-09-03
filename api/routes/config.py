@@ -44,6 +44,19 @@ async def get_matchers_config():
     return _load_yaml("matchers.yaml")
 
 
+@router.post("/matchers")
+async def update_matchers_config(config_data: Dict[str, Any]):
+    """Update and persist the matcher configuration."""
+    path = CONFIGS_DIR / "matchers.yaml"
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            yaml.dump(config_data, f, default_flow_style=False)
+        return {"status": "success", "message": "Configuration updated successfully"}
+    except Exception as e:
+        logger.error("Failed to write matchers config: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/default")
 async def get_default_config():
     """Return global default configuration (default.yaml)."""
