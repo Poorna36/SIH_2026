@@ -6,7 +6,7 @@
  * they return null and the calling hooks fall back to mock data.
  */
 
-const API_BASE = 'http://localhost:8000';
+const API_BASE = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000').replace(/\/$/, '');
 const TIMEOUT_MS = 5000;
 
 // ── Generic fetcher with timeout + error swallowing ──
