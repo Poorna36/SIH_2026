@@ -17,12 +17,18 @@ References: ARCHITECTURE.md §4, FEATURES.md F13, CONFIGURATION.md §2
 """
 from __future__ import annotations
 
+import logging
 import time
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 
 from .base import BaseMatcher, MatchResult
+
+log = logging.getLogger(__name__)
+
+_DEFAULT_WEIGHTS = "models/crater_yolov9.pt"
 
 _DEFAULTS: Dict[str, Any] = {
     "tau_c": 3.0,              # craters/km² gate threshold
@@ -33,9 +39,9 @@ _DEFAULTS: Dict[str, Any] = {
     "hough_param2": 30,
     "hough_min_r": 5,
     "hough_max_r": 80,
-    "topology_max_craters": 50,
+    "topology_max_craters": 80,
     "match_confidence_thresh": 0.65,   # per CONFIGURATION.md confidence filter
-    "yolo_weights": None,              # path to YOLOv9 weights; None = HoughCircles
+    "yolo_weights": _DEFAULT_WEIGHTS if Path(_DEFAULT_WEIGHTS).exists() else None,
 }
 
 # YOLOv9 optional import
@@ -70,6 +76,8 @@ class CraterMatcher(BaseMatcher):
         self.max_craters: int = int(cfg["topology_max_craters"])
         self.conf_thresh: float = float(cfg["match_confidence_thresh"])
         self.yolo_weights: Optional[str] = cfg.get("yolo_weights")
+        self._yolo_model: Any = None
+        self._last_used_detector: str = "hough"
 
     # ── Gate check (FEATURES.md F13) ─────────────────────────────────────────
 
@@ -99,13 +107,19 @@ class CraterMatcher(BaseMatcher):
     def _detect_craters(self, image: np.ndarray) -> np.ndarray:
         """
         Detect craters. Returns (N, 3) array of (col, row, radius_px).
-        Tries YOLOv9 first; falls back to HoughCircles automatically.
+        Tries YOLO first; falls back to HoughCircles automatically.
         """
+        self._last_used_detector = "hough"
         if self.yolo_weights and _HAS_TORCH:
             try:
-                return self._detect_yolo(image)
-            except Exception:
-                pass   # fall through to HoughCircles
+                weights_p = Path(self.yolo_weights)
+                if weights_p.exists():
+                    craters = self._detect_yolo(image)
+                    if len(craters) > 0:
+                        self._last_used_detector = "yolo"
+                        return craters
+            except Exception as exc:
+                log.warning("YOLO crater detection failed (%s); falling back to HoughCircles", exc)
         return self._detect_hough(image)
 
     def _detect_hough(self, image: np.ndarray) -> np.ndarray:
@@ -132,11 +146,94 @@ class CraterMatcher(BaseMatcher):
         return circles[:self.max_craters]
 
     def _detect_yolo(self, image: np.ndarray) -> np.ndarray:
-        """YOLOv9 crater detector. Returns (N, 3) col, row, radius."""
-        import torch
-        # Placeholder — weights must be loaded from self.yolo_weights
-        # In production: model = torch.hub.load(...)
-        raise NotImplementedError("YOLOv9 weights not loaded; using HoughCircles")
+        """
+        YOLO crater detector. Returns (N, 3) col, row, radius.
+        Uses Multi-Scale Scale-Space Pyramid Inference for both giant impact basins
+        and sub-kilometer micro-craters.
+        """
+        if self._yolo_model is None:
+            from ultralytics import YOLO
+            self._yolo_model = YOLO(self.yolo_weights)
+
+        import cv2
+
+        # Convert to 3-channel uint8 BGR
+        if image.ndim == 2:
+            img_bgr = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+        elif image.ndim == 3 and image.shape[2] == 1:
+            img_bgr = cv2.cvtColor(image[:, :, 0], cv2.COLOR_GRAY2BGR)
+        else:
+            img_bgr = image.copy()
+
+        if img_bgr.dtype != np.uint8:
+            vmin = float(np.percentile(img_bgr, 1))
+            vmax = float(np.percentile(img_bgr, 99))
+            rng = max(vmax - vmin, 1e-6)
+            img_bgr = np.clip((img_bgr - vmin) / rng * 255.0, 0, 255).astype(np.uint8)
+
+        H, W = img_bgr.shape[:2]
+        all_boxes = []
+        all_confs = []
+
+        # 1. Coarse Scale for Giant Impact Basins (w > 150px)
+        res_coarse = self._yolo_model.predict(img_bgr, imgsz=288, conf=0.20, verbose=False)[0]
+        if len(res_coarse.boxes) > 0:
+            all_boxes.append(res_coarse.boxes.xyxy.cpu().numpy())
+            all_confs.append(res_coarse.boxes.conf.cpu().numpy())
+
+        # 2. Medium Scale for Standard Craters
+        res_med = self._yolo_model.predict(img_bgr, imgsz=640, conf=0.20, verbose=False)[0]
+        if len(res_med.boxes) > 0:
+            all_boxes.append(res_med.boxes.xyxy.cpu().numpy())
+            all_confs.append(res_med.boxes.conf.cpu().numpy())
+
+        # 3. Fine Sliced Scale (SAHI) for micro-craters if high resolution (>= 800px)
+        if max(H, W) >= 800:
+            tile_size = 640
+            stride = 440
+            for y in range(0, max(1, H - tile_size + stride), stride):
+                y_end = min(H, y + tile_size)
+                y_start = max(0, y_end - tile_size)
+                for x in range(0, max(1, W - tile_size + stride), stride):
+                    x_end = min(W, x + tile_size)
+                    x_start = max(0, x_end - tile_size)
+
+                    crop = img_bgr[y_start:y_end, x_start:x_end]
+                    res_tile = self._yolo_model.predict(crop, conf=0.20, imgsz=tile_size, verbose=False)[0]
+                    if len(res_tile.boxes) > 0:
+                        b = res_tile.boxes.xyxy.cpu().numpy().copy()
+                        c = res_tile.boxes.conf.cpu().numpy().copy()
+                        b[:, [0, 2]] += x_start
+                        b[:, [1, 3]] += y_start
+                        all_boxes.append(b)
+                        all_confs.append(c)
+
+        if not all_boxes:
+            return np.empty((0, 3), dtype=np.float32)
+
+        boxes = np.vstack(all_boxes)
+        confs = np.concatenate(all_confs)
+
+        # Multi-scale OpenCV NMS
+        cv_boxes = [[int(x1), int(y1), int(x2 - x1), int(y2 - y1)] for x1, y1, x2, y2 in boxes]
+        indices = cv2.dnn.NMSBoxes(cv_boxes, confs.tolist(), score_threshold=0.20, nms_threshold=0.45)
+        if len(indices) == 0:
+            return np.empty((0, 3), dtype=np.float32)
+
+        indices = np.array(indices).flatten()
+        boxes = boxes[indices]
+        confs = confs[indices]
+
+        # Convert xyxy -> (col, row, radius)
+        craters = np.zeros((len(boxes), 3), dtype=np.float32)
+        craters[:, 0] = (boxes[:, 0] + boxes[:, 2]) / 2.0  # col
+        craters[:, 1] = (boxes[:, 1] + boxes[:, 3]) / 2.0  # row
+        craters[:, 2] = ((boxes[:, 2] - boxes[:, 0]) + (boxes[:, 3] - boxes[:, 1])) / 4.0  # radius
+
+        # Sort by confidence descending, then cap to self.max_craters
+        sort_idx = np.argsort(-confs)
+        craters = craters[sort_idx]
+        return craters[:self.max_craters]
 
     # ── CNSF topology (FEATURES.md F13) ──────────────────────────────────────
 
@@ -145,10 +242,14 @@ class CraterMatcher(BaseMatcher):
         Build Crater Neighbourhood Shape Feature (CNSF).
 
         Per FEATURES.md F13: centre + radius + neighbourhood topology per crater.
-        Returns dict with 'craters' (N,3) and 'adj_matrix' (N,N).
+        Returns dict with 'craters' (N,3), 'adj_matrix' (N,N), and local 'descriptors' (N, D).
         """
         if len(craters) < 2:
-            return {"craters": craters, "adj_matrix": np.zeros((len(craters), len(craters)))}
+            return {
+                "craters": craters,
+                "adj_matrix": np.zeros((len(craters), len(craters)), dtype=np.float32),
+                "descriptors": np.zeros((len(craters), 0), dtype=np.float32),
+            }
 
         N = len(craters)
         adj = np.zeros((N, N), dtype=np.float32)
@@ -159,11 +260,28 @@ class CraterMatcher(BaseMatcher):
                 dy = craters[i, 1] - craters[j, 1]
                 dist = np.sqrt(dx**2 + dy**2)
                 r_sum = craters[i, 2] + craters[j, 2]
-                # Normalised distance = dist / (r_i + r_j)
                 norm_dist = dist / (r_sum + 1e-9)
                 adj[i, j] = adj[j, i] = norm_dist
 
-        return {"craters": craters, "adj_matrix": adj}
+        # Local K-NN Shape Descriptor (scale-invariant & robust to missing/extra craters)
+        K = min(8, N - 1)
+        coords = craters[:, :2]
+        radii = craters[:, 2]
+        descriptors = []
+        for i in range(N):
+            dists = np.linalg.norm(coords - coords[i], axis=1)
+            nn_idx = np.argsort(dists)[1:K+1]
+            nn_dists = dists[nn_idx]
+            scale = np.median(nn_dists) + 1e-6
+            norm_d = nn_dists / scale
+            norm_r = radii[nn_idx] / (radii[i] + 1e-6)
+            descriptors.append(np.hstack([norm_d, norm_r]))
+
+        return {
+            "craters": craters,
+            "adj_matrix": adj,
+            "descriptors": np.array(descriptors, dtype=np.float32),
+        }
 
     def _topology_match(
         self,
@@ -174,14 +292,12 @@ class CraterMatcher(BaseMatcher):
         Similarity-invariant topology matching between two CNSFs.
         Returns (src_xy, ref_xy, confidence) arrays.
 
-        Strategy: for each src crater, find ref crater with most similar
-        normalised adjacency row (L1 distance on sorted adjacency vector).
-        Apply MCR structural outlier removal.
+        Strategy: Mutual nearest neighbor matching on local CNSF descriptors
+        with fallback to sorted adjacency matching for tiny sets.
+        Applies MCR structural outlier removal.
         """
         c_src = cnsf_src["craters"]   # (Ns, 3)
         c_ref = cnsf_ref["craters"]   # (Nr, 3)
-        A_src = cnsf_src["adj_matrix"]  # (Ns, Ns)
-        A_ref = cnsf_ref["adj_matrix"]  # (Nr, Nr)
 
         Ns, Nr = len(c_src), len(c_ref)
         if Ns == 0 or Nr == 0:
@@ -189,29 +305,47 @@ class CraterMatcher(BaseMatcher):
                     np.empty((0, 2), dtype=np.float32),
                     np.empty(0, dtype=np.float32))
 
+        desc_src = cnsf_src.get("descriptors")
+        desc_ref = cnsf_ref.get("descriptors")
+
         src_xy_out, ref_xy_out, conf_out = [], [], []
 
-        for i in range(Ns):
-            # Descriptor = sorted adjacency row (normalised)
-            desc_i = np.sort(A_src[i])
-            best_j, best_score = -1, float("inf")
-            for j in range(Nr):
-                desc_j = np.sort(A_ref[j])
-                # Align lengths
-                L = min(len(desc_i), len(desc_j))
-                score = float(np.abs(desc_i[:L] - desc_j[:L]).mean())
-                if score < best_score:
-                    best_score = score
-                    best_j = j
+        # If both have local descriptors with matching dimension
+        if desc_src is not None and desc_ref is not None and desc_src.ndim == 2 and desc_ref.ndim == 2 and desc_src.shape[1] == desc_ref.shape[1] and desc_src.shape[1] > 0:
+            # Pairwise L2 distance
+            cost = np.linalg.norm(desc_src[:, None, :] - desc_ref[None, :, :], axis=2)
+            best_ref_for_src = np.argmin(cost, axis=1)
+            best_src_for_ref = np.argmin(cost, axis=0)
 
-            if best_j >= 0:
-                # Confidence = 1 - normalised L1 distance
-                raw_conf = max(0.0, 1.0 - best_score)
-                if raw_conf >= self.conf_thresh:
-                    # Coordinates in (col, row)
-                    src_xy_out.append([c_src[i, 0], c_src[i, 1]])
-                    ref_xy_out.append([c_ref[best_j, 0], c_ref[best_j, 1]])
-                    conf_out.append(raw_conf)
+            for i in range(Ns):
+                j = best_ref_for_src[i]
+                if best_src_for_ref[j] == i:
+                    score = float(cost[i, j])
+                    conf = float(1.0 / (1.0 + score))
+                    if conf >= min(self.conf_thresh, 0.50):
+                        src_xy_out.append([c_src[i, 0], c_src[i, 1]])
+                        ref_xy_out.append([c_ref[j, 0], c_ref[j, 1]])
+                        conf_out.append(conf)
+        else:
+            # Adjacency vector fallback
+            A_src = cnsf_src["adj_matrix"]
+            A_ref = cnsf_ref["adj_matrix"]
+            for i in range(Ns):
+                desc_i = np.sort(A_src[i])
+                best_j, best_score = -1, float("inf")
+                for j in range(Nr):
+                    desc_j = np.sort(A_ref[j])
+                    L = min(len(desc_i), len(desc_j))
+                    score = float(np.abs(desc_i[:L] - desc_j[:L]).mean())
+                    if score < best_score:
+                        best_score = score
+                        best_j = j
+                if best_j >= 0:
+                    raw_conf = float(1.0 / (1.0 + best_score))
+                    if raw_conf >= min(self.conf_thresh, 0.50):
+                        src_xy_out.append([c_src[i, 0], c_src[i, 1]])
+                        ref_xy_out.append([c_ref[best_j, 0], c_ref[best_j, 1]])
+                        conf_out.append(raw_conf)
 
         if not src_xy_out:
             return (np.empty((0, 2), dtype=np.float32),
@@ -315,9 +449,11 @@ class CraterMatcher(BaseMatcher):
 
         # ── Detect craters ────────────────────────────────────────────────────
         craters_src = self._detect_craters(src)
+        src_detector = self._last_used_detector
         craters_ref = self._detect_craters(ref)
+        ref_detector = self._last_used_detector
 
-        using_hough = self.yolo_weights is None or not _HAS_TORCH
+        using_hough = (src_detector == "hough" or ref_detector == "hough")
         actual_id = "crater_hough" if using_hough else "crater"
 
         # Pre-flight recall check

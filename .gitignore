@@ -64,7 +64,11 @@ ch2_*
 *.pt
 *.pth
 *.onnx
+dataset/
+runs/
+.config/
 weights/
+!models/crater_yolov9.pt
 
 # Internal drafts & ignored compendiums
 ARCHITECTURE/
