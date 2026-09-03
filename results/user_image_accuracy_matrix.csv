@@ -1,0 +1,10 @@
+Metric,Value,Percentage
+Total Detections,300,100.0%
+True Positives (TP),210,70.00%
+False Positives (FP),90,30.00%
+False Negatives (FN),941,81.75%
+Precision,0.7000,70.00%
+Recall,0.1825,18.25%
+F1-Score,0.2895,28.95%
+Mean IoU,0.5714,57.14%
+Overall Accuracy,0.1692,16.92%

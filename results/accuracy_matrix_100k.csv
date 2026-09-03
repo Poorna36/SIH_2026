@@ -1,0 +1,10 @@
+Metric,Value,Percentage
+Total Checks,100000,100.0%
+True Positives (TP),37553,37.55%
+False Positives (FP),3547,3.55%
+False Negatives (FN),58900,58.90%
+Precision,0.9137,91.37%
+Recall,0.3893,38.93%
+F1-Score,0.5460,54.60%
+Mean IoU,0.8251,82.51%
+Overall Accuracy,0.3755,37.55%

@@ -1,0 +1,13 @@
+Target Image,Image 1: Lunar Highlands Terrain (Shadowed),Image 2: Copernicus Mare Field (Wide)
+Filename,media__1788402315231.jpg,media__1788402341593.png
+Resolution,1024x1024,1024x575
+Inference Speed,1512.21 ms,37.40 ms
+Total Detections,300,300
+True Positives (TP),241 (80.33%),217 (72.33%)
+False Positives (FP),59,83
+False Negatives (FN),4120,1396
+Precision,80.33%,72.33%
+Recall,5.53%,13.45%
+F1-Score,10.34%,22.69%
+Mean IoU,66.12%,58.23%
+Overall Accuracy,5.45%,12.79%

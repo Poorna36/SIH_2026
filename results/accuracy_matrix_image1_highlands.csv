@@ -1,0 +1,19 @@
+Metric,Value
+Label,Image 1: Lunar Highlands Terrain (Shadowed)
+File,media__1788402315231.jpg
+Resolution,1024x1024
+Inference_ms,1512.21
+Total_Detections,300
+TP,241
+FP,59
+FN,4120
+Precision,0.8033
+Precision_pct,80.33%
+Recall,0.0553
+Recall_pct,5.53%
+F1_Score,0.1034
+F1_pct,10.34%
+Mean_IoU,0.6612
+IoU_pct,66.12%
+Overall_Accuracy,0.0545
+Accuracy_pct,5.45%

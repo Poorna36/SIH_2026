@@ -1,0 +1,19 @@
+Metric,Value
+Label,Image 2: Copernicus Mare Field (Wide)
+File,media__1788402341593.png
+Resolution,1024x575
+Inference_ms,37.40
+Total_Detections,300
+TP,217
+FP,83
+FN,1396
+Precision,0.7233
+Precision_pct,72.33%
+Recall,0.1345
+Recall_pct,13.45%
+F1_Score,0.2269
+F1_pct,22.69%
+Mean_IoU,0.5823
+IoU_pct,58.23%
+Overall_Accuracy,0.1279
+Accuracy_pct,12.79%

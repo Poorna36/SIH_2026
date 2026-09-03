@@ -1,0 +1,23 @@
+# Virtual environments
+SIH2026_env/
+.venv/
+env/
+__pycache__/
+
+# Datasets and large media files
+pristine_dataset/
+real_dataset/
+chandrayaan2_dataset/
+chandrayaan2_dataset_all/
+!results/
+
+# Model weights and runs
+runs/
+models/*.pt
+*.pt
+!models/crater_yolov9.pt
+
+# IDE / OS files
+.vscode/
+.idea/
+.DS_Store

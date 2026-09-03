@@ -1,0 +1,13 @@
+Metric,Value,Percentage / Notes
+Image File,media__1788401907892.png,User Uploaded Image
+Image Dimensions,1024x575,588800 pixels
+Inference Speed,1445.28 ms,0.7 FPS
+Total Detections,300,100.0%
+True Positives (TP),184,61.33%
+False Positives (FP),116,38.67%
+False Negatives (FN),673,78.53%
+Precision,0.6133,61.33%
+Recall,0.2147,21.47%
+F1-Score,0.3181,31.81%
+Mean IoU,0.5256,52.56%
+Overall Accuracy,0.1891,18.91%
