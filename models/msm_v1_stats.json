@@ -1,6 +1,6 @@
 {
   "model_version": "msm_v1",
-  "n_samples": 10,
+  "n_samples": 8,
   "n_features": 13,
   "feature_names": [
     "sensor_pair_enc",
@@ -24,57 +24,55 @@
     "lightglue",
     "crater"
   ],
-  "cv_splits": 4,
-  "cv_mean_accuracy": 0.4167,
-  "cv_mean_top2_accuracy": 0.6667,
+  "cv_splits": 3,
+  "cv_mean_accuracy": 0.6667,
+  "cv_mean_top2_accuracy": 0.7778,
   "fold_accuracies": [
-    1.0,
-    0.0,
     0.6667,
-    0.0
+    0.3333,
+    1.0
   ],
   "fold_top2_accuracies": [
     1.0,
-    1.0,
-    0.6667,
-    0.0
+    0.3333,
+    1.0
   ],
   "feature_importance_split": {
     "sensor_pair_enc": 0.0,
-    "gsd_ratio": 0.0,
-    "latitude_abs": 213.0,
-    "delta_solar_azimuth": 1.0,
-    "terrain_class_enc": 99.0,
+    "gsd_ratio": 136.0,
+    "latitude_abs": 116.0,
+    "delta_solar_azimuth": 98.0,
+    "terrain_class_enc": 92.0,
     "crater_density": 0.0,
-    "masked_fraction": 51.0,
+    "masked_fraction": 0.0,
     "overlap_fraction": 0.0,
-    "src_texture_contrast": 15.0,
-    "ref_texture_contrast": 49.0,
+    "src_texture_contrast": 0.0,
+    "ref_texture_contrast": 0.0,
     "src_mean_gradient": 0.0,
-    "ref_mean_gradient": 50.0,
+    "ref_mean_gradient": 0.0,
     "tile_count": 0.0
   },
   "feature_importance_gain": {
     "sensor_pair_enc": 0.0,
-    "gsd_ratio": 0.0,
-    "latitude_abs": 97.0386,
-    "delta_solar_azimuth": 0.0,
-    "terrain_class_enc": 19.4899,
+    "gsd_ratio": 30.6293,
+    "latitude_abs": 17.3466,
+    "delta_solar_azimuth": 12.9674,
+    "terrain_class_enc": 31.0794,
     "crater_density": 0.0,
-    "masked_fraction": 2.224,
+    "masked_fraction": 0.0,
     "overlap_fraction": 0.0,
     "src_texture_contrast": 0.0,
-    "ref_texture_contrast": 46.5521,
+    "ref_texture_contrast": 0.0,
     "src_mean_gradient": 0.0,
-    "ref_mean_gradient": 41.243,
+    "ref_mean_gradient": 0.0,
     "tile_count": 0.0
   },
   "geo_cell_leakage_audit": "PASSED (0 overlap between CV folds)",
   "provenance": {
     "config_hash": "99914b932bd37a50b983c5e7c90ae93b",
-    "code_commit": "3d2e9b5353493f6f4855acc89333ad5ddc4b210a",
+    "code_commit": "ad42a3bf860d0b11676e9d12dcebabe6561fe5d8",
     "matcher_params_hash": "99914b932bd37a50b983c5e7c90ae93b",
-    "created_at": "2026-09-01T17:26:48Z",
+    "created_at": "2026-09-03T15:45:24Z",
     "seed": 42
   }
 }

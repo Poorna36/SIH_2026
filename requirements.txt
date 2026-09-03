@@ -2,6 +2,11 @@
 # SIH 2026 (PS-26166) - Lunar Image Correspondence Pipeline Dependencies
 # =============================================================================
 
+# API server
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+pydantic>=2.0.0
+
 # Core Scientific & Math
 numpy>=1.24.0
 scipy>=1.10.0
@@ -21,6 +26,7 @@ pyyaml>=6.0
 # Deep Learning & Modern Feature Matching
 torch>=2.0.0
 torchvision>=0.15.0
+ultralytics>=8.3.0
 kornia>=0.7.0
 kornia-rs>=0.1.9
 

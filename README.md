@@ -4,6 +4,36 @@
 
 This repo currently contains the **data-collection + LRO reference automation layer** of the full registration pipeline.
 
+## Run the connected dashboard
+
+Install the backend dependencies and start the API from the `backend` directory:
+
+```bash
+cd backend
+python -m pip install -r requirements.txt
+python -m api.server
+```
+
+The API listens on `http://localhost:8000`. Verify it with `http://localhost:8000/api/health`.
+
+The crater matcher uses the trained YOLO weight at `models/crater_yolov9.pt` from the repository's `feat/backend-yolo` branch. Install `ultralytics` from `requirements.txt` or `environment.yml` to enable YOLO inference; otherwise the matcher uses its documented Hough fallback.
+
+In a second terminal, start the dashboard:
+
+```bash
+cd sih-dashboard
+npm install
+npm run dev
+```
+
+Open `http://localhost:5173`. The dashboard uses live API data when the health endpoint is available and falls back to mock data when it is not.
+
+For a deployed or preview frontend, set `VITE_API_BASE_URL` to the backend URL before building:
+
+```bash
+VITE_API_BASE_URL=https://api.example.com npm run build
+```
+
 ---
 
 # Clone & get the LRO reference data yourself (no login, no manual download)

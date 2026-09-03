@@ -15,6 +15,15 @@ env/
 ENV/
 .conda/
 
+# Environment variables and local secrets
+.env
+.env.*
+*.env
+*.env.local
+*.env.*
+!.env.example
+!.env.*.example
+
 # OS / Editor artifacts
 .DS_Store
 Thumbs.db

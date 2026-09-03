@@ -20,5 +20,6 @@ dependencies:
       - pydegensac>=0.1.2
       - torch>=2.0.0
       - torchvision>=0.15.0
+      - ultralytics>=8.3.0
       - kornia>=0.7.0
       - git+https://github.com/cvg/LightGlue.git

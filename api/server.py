@@ -55,6 +55,8 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:5173",   # sih-dashboard (Vite)
         "http://127.0.0.1:5173",
+        "http://localhost:4173",   # sih-dashboard (Vite preview)
+        "http://127.0.0.1:4173",
         "http://localhost:3000",   # fallback dev port
     ],
     allow_credentials=True,
