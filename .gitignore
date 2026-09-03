@@ -83,3 +83,7 @@ weights/
 ARCHITECTURE/
 ALL_IN_ONE_*.md
 BEST_ARCHITECTURE_KNOWN.md
+# Node / Frontend build artifacts
+node_modules/
+dist/
+dist-ssr/
