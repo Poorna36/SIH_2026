@@ -178,7 +178,9 @@ This document specifies all functional features (F01 through F27), operational c
 ## F16. DEGENSAC Verification and Hierarchical Model Ladder
 
 - Component: Layer 4 (`src/registration/ladder.py`)
-- Description: Degeneracy-aware RANSAC (DEGENSAC) with 10,000 iterations and 0.99999 confidence. Evaluates models in order: Similarity (4 DoF), Affine (6 DoF), Homography (8 DoF). Accepts the simplest model achieving residual $\text{RMSE} \le 1.0\text{ px}$.
+- Description: Degeneracy-aware RANSAC \
+
+(DEGENSAC) with 10,000 iterations and 0.99999 confidence. Evaluates models in order: Similarity (4 DoF), Affine (6 DoF), Homography (8 DoF). Accepts the simplest model achieving residual $\text{RMSE} \le 1.0\text{ px}$.
 - Acceptance Criteria:
   - Employs degeneracy-aware sampling to prevent planar collapse on lunar maria.
   - Selected ladder level is recorded in `geometry.json`.
@@ -187,6 +189,7 @@ This document specifies all functional features (F01 through F27), operational c
 ---
 
 ## F17. Tile-Wise Local Model Partitioning
+
 
 - Component: Layer 4 (`src/registration/tilewise.py`)
 - Description: Bypasses global models in favor of tile-wise local transformations (512 px tiles, 50% overlap) when centroid latitude exceeds $\pm 55^\circ$ or across rugged topography. Blends boundaries using Gaussian distance weights:

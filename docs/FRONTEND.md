@@ -102,9 +102,4 @@ The dashboard features dual operational modes with automatic fallback:
 
 ---
 
-## 7. Visual Design Standards
 
-- Color Palette: Deep Space Obsidian (`#020408`, `#050B14`), Neon Emerald (`#10B981`, `#34D399`), and Electric Cyan (`#38BDF8`).
-- Surface Treatment: Semi-transparent glassmorphic panels (`backdrop-filter: blur(20px)`, subtle 1px borders).
-- Typography: Clean sans-serif interface text paired with tabular monospace fonts for numerical coordinates and metrics.
-- Interface Discipline: No decorative emojis or uncalibrated icons; all indicators rely on precision SVGs and CSS status dots.
