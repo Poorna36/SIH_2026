@@ -372,56 +372,59 @@ export const KeypointViewer: React.FC<KeypointViewerProps> = ({
     <div className="flex flex-col h-full bg-[#07080A] rounded-2xl overflow-hidden border border-white/10 shadow-2xl font-sans">
       {/* ── TOP TOOLBAR (CLEAN AEROSPACE SEGMENTED CONTROLS) ── */}
       <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 border-b border-white/10 bg-black/70 backdrop-blur-xl shrink-0">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-4">
           {/* Section Brand */}
           <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-[#2997FF] shadow-[0_0_10px_rgba(41,151,255,0.9)]" />
+            <span className="w-2 h-2 rounded-full bg-[#2997FF]" />
             <span className="text-xs font-bold text-white tracking-wider uppercase font-headline">
               2D Optical Alignment
             </span>
           </div>
 
-          <div className="hidden sm:block w-px h-4 bg-white/15" />
+          <div className="hidden sm:block w-px h-3.5 bg-white/15" />
 
-          {/* Integrated Clean Keypoint Filters */}
-          <div className="flex items-center bg-white/[0.04] border border-white/10 rounded-full p-0.5">
+          {/* Clean Scientific Keypoint Toggles (No AI Pills) */}
+          <div className="flex items-center gap-3">
             <button
               onClick={() => setShowInliers(!showInliers)}
-              className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold transition-all cursor-pointer ${
+              className={`flex items-center gap-1.5 text-xs font-medium transition-opacity cursor-pointer ${
                 showInliers
-                  ? 'bg-emerald-500/20 text-emerald-300 shadow-[0_0_10px_rgba(16,185,129,0.3)]'
-                  : 'text-white/40 hover:text-white/70'
+                  ? 'text-emerald-400 opacity-100 hover:opacity-80'
+                  : 'text-white/30 line-through'
               }`}
               title="Toggle Inlier Correspondence Lines"
             >
-              <span className={`w-1.5 h-1.5 rounded-full ${showInliers ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)]' : 'bg-white/30'}`} />
+              <span className={`w-1.5 h-1.5 rounded-full ${showInliers ? 'bg-emerald-400' : 'bg-white/20'}`} />
               <span>Inliers ({inlierCount})</span>
             </button>
 
             <button
               onClick={() => setShowOutliers(!showOutliers)}
-              className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold transition-all cursor-pointer ${
+              className={`flex items-center gap-1.5 text-xs font-medium transition-opacity cursor-pointer ${
                 showOutliers
-                  ? 'bg-red-500/20 text-red-300 shadow-[0_0_10px_rgba(239,68,68,0.3)]'
-                  : 'text-white/40 hover:text-white/70'
+                  ? 'text-rose-400 opacity-100 hover:opacity-80'
+                  : 'text-white/30 line-through'
               }`}
               title="Toggle Outlier Correspondence Lines"
             >
-              <span className={`w-1.5 h-1.5 rounded-full ${showOutliers ? 'bg-red-400 shadow-[0_0_6px_rgba(248,113,113,0.8)]' : 'bg-white/30'}`} />
+              <span className={`w-1.5 h-1.5 rounded-full ${showOutliers ? 'bg-rose-400' : 'bg-white/20'}`} />
               <span>Outliers ({outlierCount})</span>
             </button>
           </div>
 
           {/* Replay Transition */}
           {viewMode === 'side-by-side' && (
-            <button
-              onClick={triggerMergeAnimation}
-              className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium text-white/70 hover:text-white bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 transition-all cursor-pointer active:scale-95"
-              title="Replay Alignment Fusion Animation"
-            >
-              <Sparkles size={12} className="text-amber-300" />
-              <span className="hidden md:inline">Replay Glide</span>
-            </button>
+            <>
+              <div className="hidden sm:block w-px h-3.5 bg-white/15" />
+              <button
+                onClick={triggerMergeAnimation}
+                className="flex items-center gap-1.5 text-xs text-white/60 hover:text-white transition-colors cursor-pointer"
+                title="Replay Alignment Fusion Animation"
+              >
+                <Sparkles size={12} className="text-amber-300" />
+                <span className="hidden md:inline">Replay Glide</span>
+              </button>
+            </>
           )}
         </div>
 

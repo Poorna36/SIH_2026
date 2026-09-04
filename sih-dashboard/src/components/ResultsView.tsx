@@ -512,16 +512,6 @@ Calibration Authority: Autonomous Lunar Mission Engineering Team
         </div>
 
         <div className="flex items-center gap-2.5 shrink-0 relative flex-wrap">
-          {/* Live Backend Connection Indicator */}
-          <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-mono font-semibold border ${
-            isBackendOnline
-              ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
-              : 'bg-amber-500/10 text-amber-300 border-amber-500/30'
-          }`}>
-            <span className={`w-2 h-2 rounded-full ${isBackendOnline ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
-            <span>{isBackendOnline ? 'LIVE FASTAPI ENGINE' : 'OFFLINE (FALLBACK BASELINE)'}</span>
-          </div>
-
           {onNavigateToTab && (
             <button
               onClick={() => onNavigateToTab('2d')}
@@ -685,18 +675,6 @@ Calibration Authority: Autonomous Lunar Mission Engineering Team
           )}
         </div>
       </div>
-
-      {/* Offline Alert Banner */}
-      {!isBackendOnline && (
-        <div className="flex items-center justify-between gap-3 p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-300">
-          <div className="flex items-center gap-2.5 text-xs font-mono">
-            <AlertTriangle size={16} className="text-amber-400 shrink-0" />
-            <span>
-              <strong>FASTAPI BACKEND OFFLINE (Port 8000 Disconnected):</strong> Displaying cached calibration reference. Start backend server (<code className="bg-black/40 px-1.5 py-0.5 rounded text-white font-mono">python -m uvicorn api.server:app --port 8000</code>) to compute live sub-pixel co-registration and real-time SLZ hazard evaluation.
-            </span>
-          </div>
-        </div>
-      )}
 
       {/* Loading Indicator */}
       {isLoading && (
