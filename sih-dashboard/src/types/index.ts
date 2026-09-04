@@ -48,6 +48,27 @@ export interface TelemetryData {
   utc: string;
   runtimeS: number;
   ladderLevel: number; // 0=similarity, 1=affine, 2=homography
+  rotationDeg?: number;
+  scaleFactor?: number;
+  translationDxPx?: number;
+  translationDyPx?: number;
+  translationDxM?: number;
+  translationDyM?: number;
+  homographyMatrix?: number[][];
+  matcherBenchmarks?: Record<
+    string,
+    {
+      rmse_px?: number;
+      rmsePx?: number;
+      inlier_ratio?: number;
+      inlierRatio?: number;
+      inliers?: number;
+      candidates?: number;
+      status?: string;
+      runtime_s?: number;
+      runtimeS?: number;
+    }
+  >;
 }
 
 export interface SpectralDataPoint {
@@ -95,6 +116,12 @@ export interface SLZDiagnostic {
   goNoGo: 'GO' | 'NO-GO' | 'MARGINAL';
   terrainRoughnessCm?: number;
   craterDensityKm2?: number;
+  optimalLandingSite?: {
+    lat: number;
+    lon: number;
+    elevationM?: number;
+    hazardProbability?: number;
+  };
 }
 
 export interface PipelineOptions {

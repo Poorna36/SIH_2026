@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import { LunarisLanding } from './components/landing/LunarisLanding';
-import { MoonWorkbenchOverlay, type ProbedLocation } from './components/MoonWorkbenchOverlay';
+import { MoonWorkbenchOverlay } from './components/MoonWorkbenchOverlay';
 import { LunarTargetPalette } from './components/LunarTargetPalette';
 import { EngineInspector } from './components/EngineInspector';
 import { KeypointViewer } from './components/KeypointViewer';
@@ -119,6 +119,7 @@ export function App() {
     lastPipelineResult,
     saveMatcherConfig,
     runPipelineOnPair,
+    refreshData,
   } = useBackendData();
 
   // Workbench State
@@ -129,70 +130,6 @@ export function App() {
   const [isEngineInspectorOpen, setIsEngineInspectorOpen] = useState(false);
   const [isAddFilesOpen, setIsAddFilesOpen] = useState(false);
   const [cameraZoom, setCameraZoom] = useState<number>(3.8);
-
-  const [isOrbitTourActive, setIsOrbitTourActive] = useState(false);
-  const [probedTarget, setProbedTarget] = useState<ProbedLocation | null>(null);
-
-  const handleProbeLocation = (lat: number, lon: number) => {
-    const match = craters.find((c) => Math.hypot(c.lat - lat, c.lon - lon) < 6.0);
-    if (match) {
-      setProbedTarget({
-        lat: match.lat,
-        lon: match.lon,
-        name: match.name,
-        region: match.region,
-        elevationM: match.depth_km ? Math.round(-match.depth_km * 1000) : -2400,
-        solarIncidence: match.solar_incidence_deg ?? Math.round(Math.abs(lat) + 5),
-        temperatureK: match.surface_temp_kelvin ?? (Math.abs(lat) > 75 ? 90 : 360),
-        waterIceWtPct: match.water_ice_concentration_wt_pct ?? (Math.abs(lat) > 70 ? 3.8 : 0.4),
-        psrStatus: match.psr_status ?? (Math.abs(lat) > 80 ? 'Permanently Shadowed (PSR)' : 'Sunlit Plains'),
-        craterId: match.id,
-      });
-    } else {
-      const isPolar = Math.abs(lat) > 70;
-      const solarInc = Math.round(Math.min(88, Math.max(30, Math.abs(lat) + 4)));
-      const tempK = isPolar
-        ? Math.round(40 + (90 - Math.abs(lat)) * 5.5)
-        : Math.round(230 + Math.cos((lat * Math.PI) / 180) * 135);
-      setProbedTarget({
-        lat,
-        lon,
-        name: `Selenographic Point (${lat > 0 ? '+' : ''}${lat}°, ${lon > 0 ? '+' : ''}${lon}°)`,
-        region: isPolar ? 'South Polar Highland Corridor' : 'Equatorial Regolith Terrain',
-        elevationM: Math.round(-1800 + Math.sin(lat * 0.1) * 2200),
-        solarIncidence: solarInc,
-        temperatureK: tempK,
-        waterIceWtPct: isPolar ? Math.min(8.5, Number((1.5 + (Math.abs(lat) - 70) * 0.3).toFixed(1))) : 0.3,
-        psrStatus: isPolar ? 'Cryogenic Micro-cold Trap' : 'Sunlit Basaltic Regolith',
-        craterId: undefined,
-      });
-    }
-  };
-
-  const handleInspectProbedTargetIn2D = () => {
-    if (!probedTarget) return;
-    if (probedTarget.craterId) {
-      setSelectedScene({
-        id: probedTarget.craterId,
-        name: probedTarget.name,
-        lat: probedTarget.lat,
-        lon: probedTarget.lon,
-        height: 80000,
-        description: `Probed location in ${probedTarget.region}`,
-      });
-    } else {
-      setSelectedScene({
-        id: 'copernicus',
-        name: probedTarget.name,
-        lat: probedTarget.lat,
-        lon: probedTarget.lon,
-        height: 75000,
-        description: `Custom coordinates probed on 3D Moon: ${probedTarget.lat}°, ${probedTarget.lon}°`,
-      });
-    }
-    setActiveCenterTab('2d');
-    setProbedTarget(null);
-  };
 
   const handleLaunchFromLanding = () => {
     setAppMode('workbench');
@@ -215,7 +152,6 @@ export function App() {
   const handleResetView = () => {
     setCameraZoom(3.8);
     setSelectedScene(DEFAULT_SCENE);
-    setProbedTarget(null);
   };
 
   // Live scientific data from backend
@@ -256,6 +192,7 @@ export function App() {
             goNoGo: slzData.go_no_go as any,
             terrainRoughnessCm: slzData.terrain_roughness_cm,
             craterDensityKm2: slzData.crater_density_km2,
+            optimalLandingSite: slzData.optimal_landing_site,
           });
         }
 
@@ -289,6 +226,14 @@ export function App() {
             utc: telemetryData.utc || new Date().toISOString(),
             runtimeS: telemetryData.runtime_s,
             ladderLevel: telemetryData.ladder_level,
+            homographyMatrix: telemetryData.homography_matrix,
+            translationDxPx: telemetryData.translation_dx_px,
+            translationDyPx: telemetryData.translation_dy_px,
+            translationDxM: telemetryData.translation_dx_m,
+            translationDyM: telemetryData.translation_dy_m,
+            rotationDeg: telemetryData.rotation_deg,
+            scaleFactor: telemetryData.scale_factor,
+            matcherBenchmarks: telemetryData.matcher_benchmarks,
           });
         }
 
@@ -411,9 +356,8 @@ export function App() {
           cameraZoom={cameraZoom}
           craters={craters}
           isDrawerOpen={isTargetPaletteOpen || isEngineInspectorOpen}
-          isOrbitTourActive={isOrbitTourActive}
-          onProbeLocation={handleProbeLocation}
           onSelectCrater={(c) => setSelectedScene(c as any)}
+          onInspectIn2D={() => setActiveCenterTab('2d')}
           layers={layers}
         />
       </div>
@@ -468,11 +412,6 @@ export function App() {
             pipelineStage={pipelineStage}
             onRunPipeline={handleRunPipeline}
             telemetryRmse={activeTelemetry.rmsePx}
-            isOrbitTourActive={isOrbitTourActive}
-            onToggleOrbitTour={() => setIsOrbitTourActive((prev) => !prev)}
-            probedTarget={probedTarget}
-            onCloseProbeTarget={() => setProbedTarget(null)}
-            onInspectProbedTargetIn2D={handleInspectProbedTargetIn2D}
             isBackendOnline={isBackendOnline}
           />
 
@@ -542,9 +481,38 @@ export function App() {
             <AddFilesModal
               isOpen={isAddFilesOpen}
               onClose={() => setIsAddFilesOpen(false)}
-              onPairCreated={(newScene) => {
+              onPairCreated={async (newScene) => {
                 setSelectedScene(newScene);
                 setActiveCenterTab('2d');
+                refreshData();
+
+                if (isBackendOnline) {
+                  setPipelineStage(PipelineStage.Ingesting);
+                  const t1 = setTimeout(() => setPipelineStage(PipelineStage.GraphMatching), 500);
+                  const t2 = setTimeout(() => setPipelineStage(PipelineStage.MAGSAC), 1000);
+                  const t3 = setTimeout(() => setPipelineStage(PipelineStage.Warping), 1500);
+
+                  try {
+                    await runPipelineOnPair({
+                      pair_id: newScene.id,
+                      matcher: options.activeMatcher,
+                      options: {
+                        percentile_clipping: options.percentileClipping,
+                        clahe: options.clahe,
+                        morphological_gradients: options.morphologicalGradients,
+                        pca_band_reduction: options.pcaBandReduction,
+                      },
+                    });
+                    refreshData();
+                  } catch (err) {
+                    console.warn('Auto-run pipeline on ingested pair failed:', err);
+                  } finally {
+                    clearTimeout(t1);
+                    clearTimeout(t2);
+                    clearTimeout(t3);
+                    setPipelineStage(PipelineStage.Done);
+                  }
+                }
               }}
             />
           </div>

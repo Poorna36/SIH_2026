@@ -1,7 +1,50 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import type { ScenePreset, CraterDetail, LayerVisibility } from '../../types';
 import { getCraterCatalog } from '../../services/api';
+import ohrcThumb from '../../assets/images/ohrc_orbital_fallback.jpg';
+import ohrcCrater from '../../assets/images/ohrc_lunar_crater_1788336805774.jpg';
+import iirsThumb from '../../assets/images/iirs_hyperspectral_overlay_1788336834453.jpg';
+import tmc2Thumb from '../../assets/images/tmc2_terrain_context_1788336820221.jpg';
+import lroThumb from '../../assets/images/lro_reference_baseline_1788336850293.jpg';
+import surfaceHero from '../../assets/images/lunar_surface_hero_1788336791925.jpg';
+
+const FALLBACK_THUMBNAILS: Record<string, string> = {
+  boguslawsky: ohrcThumb,
+  copernicus: ohrcCrater,
+  shackleton: tmc2Thumb,
+  manzinus: lroThumb,
+  cabeus: iirsThumb,
+  clavius: surfaceHero,
+  tycho: lroThumb,
+};
+
+function getCraterPreviewImage(craterId?: string, lat?: number): string {
+  if (!craterId) return ohrcCrater;
+  const id = craterId.toLowerCase();
+  for (const key of Object.keys(FALLBACK_THUMBNAILS)) {
+    if (id.includes(key)) return FALLBACK_THUMBNAILS[key];
+  }
+  if (lat !== undefined && Math.abs(lat) > 60) return ohrcThumb;
+  return ohrcCrater;
+}
+
+function getCraterSensorBadge(craterId?: string): { sensor: string; res: string } {
+  const id = (craterId || '').toLowerCase();
+  if (id.includes('boguslawsky') || id.includes('copernicus')) {
+    return { sensor: 'OHRC HIGH-RES ORBITAL', res: '0.25 m/px' };
+  }
+  if (id.includes('shackleton')) {
+    return { sensor: 'TMC-2 STEREO 3D', res: '5.0 m/px' };
+  }
+  if (id.includes('cabeus')) {
+    return { sensor: 'IIRS HYPERSPECTRAL', res: '80 m/px' };
+  }
+  if (id.includes('manzinus') || id.includes('tycho')) {
+    return { sensor: 'LRO-NAC POLAR REF', res: '0.50 m/px' };
+  }
+  return { sensor: 'CH-2 PAYLOAD SUITE', res: 'SUB-METER' };
+}
 
 
 // Procedural high-resolution crinkled gold thermal foil texture
@@ -88,9 +131,8 @@ export interface WebGlMoonViewerProps {
   craters?: CraterDetail[];
   isDrawerOpen?: boolean;
   sunAzimuthDeg?: number;
-  isOrbitTourActive?: boolean;
-  onProbeLocation?: (lat: number, lon: number) => void;
   onSelectCrater?: (crater: CraterDetail | ScenePreset) => void;
+  onInspectIn2D?: () => void;
   layers?: LayerVisibility;
 }
 
@@ -102,13 +144,20 @@ export const WebGlMoonViewer: React.FC<WebGlMoonViewerProps> = ({
   craters = [],
   isDrawerOpen = false,
   sunAzimuthDeg = 68,
-  isOrbitTourActive = false,
-  onProbeLocation,
   layers,
   onSelectCrater,
+  onInspectIn2D,
 }) => {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  const [hoveredCrater, setHoveredCrater] = useState<CraterDetail | null>(null);
+  const [hoverPos, setHoverPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const hoveredCraterRef = useRef<CraterDetail | null>(null);
+  const onInspectIn2DRef = useRef(onInspectIn2D);
+  useEffect(() => {
+    onInspectIn2DRef.current = onInspectIn2D;
+  }, [onInspectIn2D]);
 
   // References for Three.js state
   const sceneRef = useRef<THREE.Scene | null>(null);
@@ -135,8 +184,6 @@ export const WebGlMoonViewer: React.FC<WebGlMoonViewerProps> = ({
   const isWorkbenchModeRef = useRef(isWorkbenchMode);
   const isDrawerOpenRef = useRef(isDrawerOpen);
   const sunAzimuthRef = useRef(sunAzimuthDeg);
-  const isOrbitTourActiveRef = useRef(isOrbitTourActive);
-  const onProbeLocationRef = useRef(onProbeLocation);
   const onSelectCraterRef = useRef(onSelectCrater);
   const layersRef = useRef(layers);
   const gridGroupRef = useRef<THREE.Group | null>(null);
@@ -242,14 +289,6 @@ export const WebGlMoonViewer: React.FC<WebGlMoonViewerProps> = ({
       keyLightRef.current.position.set(6 * Math.cos(rad), 2.8, 6 * Math.sin(rad));
     }
   }, [sunAzimuthDeg]);
-
-  useEffect(() => {
-    isOrbitTourActiveRef.current = isOrbitTourActive;
-  }, [isOrbitTourActive]);
-
-  useEffect(() => {
-    onProbeLocationRef.current = onProbeLocation;
-  }, [onProbeLocation]);
 
   useEffect(() => {
     if (cameraZoom !== undefined) {
@@ -751,6 +790,10 @@ export const WebGlMoonViewer: React.FC<WebGlMoonViewerProps> = ({
         isDragging.current = true;
         previousPointerPosition.current = { x: e.clientX, y: e.clientY };
         pointerDownPos.current = { x: e.clientX, y: e.clientY };
+        if (hoveredCraterRef.current) {
+          hoveredCraterRef.current = null;
+          setHoveredCrater(null);
+        }
       } else {
         if (intersects.length > 0 || distToMoon < 0.28) {
           isDragging.current = true;
@@ -761,16 +804,79 @@ export const WebGlMoonViewer: React.FC<WebGlMoonViewerProps> = ({
     };
 
     const handlePointerMove = (e: PointerEvent) => {
-      if (!isDragging.current || !moonGroupRef.current) return;
-      const deltaX = e.clientX - previousPointerPosition.current.x;
-      const deltaY = e.clientY - previousPointerPosition.current.y;
+      if (isDragging.current && moonGroupRef.current) {
+        const deltaX = e.clientX - previousPointerPosition.current.x;
+        const deltaY = e.clientY - previousPointerPosition.current.y;
 
-      targetRotationY.current += deltaX * 0.005;
-      targetRotationX.current += deltaY * 0.005;
-      // Allow full selenographic polar rotation from -90° to +90°
-      targetRotationX.current = Math.max(-1.52, Math.min(1.52, targetRotationX.current));
+        targetRotationY.current += deltaX * 0.005;
+        targetRotationX.current += deltaY * 0.005;
+        // Allow full selenographic polar rotation from -90° to +90°
+        targetRotationX.current = Math.max(-1.52, Math.min(1.52, targetRotationX.current));
 
-      previousPointerPosition.current = { x: e.clientX, y: e.clientY };
+        previousPointerPosition.current = { x: e.clientX, y: e.clientY };
+        return;
+      }
+
+      // Hover reconnaissance raycast across 3D lunar surface & crater pins
+      if (!isDragging.current && isWorkbenchModeRef.current && cameraRef.current && moonMeshRef.current) {
+        if ((e.target as HTMLElement)?.closest('[data-sidebar], .sidebar-scroll, [role="dialog"], button, a, input, select, textarea')) {
+          if (hoveredCraterRef.current) {
+            hoveredCraterRef.current = null;
+            setHoveredCrater(null);
+          }
+          return;
+        }
+
+        const rect = container.getBoundingClientRect();
+        mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+        mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+
+        raycaster.setFromCamera(mouse, cameraRef.current);
+
+        let hitCrater: CraterDetail | null = null;
+
+        // 1. Direct hit on crater pins
+        if (craterPinsGroupRef.current && craterPinsGroupRef.current.visible) {
+          const pinIntersects = raycaster.intersectObjects(craterPinsGroupRef.current.children);
+          if (pinIntersects.length > 0) {
+            hitCrater = pinIntersects[0].object.userData?.crater || null;
+          }
+        }
+
+        // 2. Proximity raycast on moon mesh
+        if (!hitCrater && craters && craters.length > 0) {
+          const intersects = raycaster.intersectObject(moonMeshRef.current);
+          if (intersects.length > 0) {
+            const pt = intersects[0].point.clone();
+            moonMeshRef.current.worldToLocal(pt);
+            const r = pt.length();
+            const lat = Math.asin(Math.max(-1, Math.min(1, pt.y / r))) * (180 / Math.PI);
+            const lon = Math.atan2(-pt.z, pt.x) * (180 / Math.PI);
+
+            let nearest = null;
+            let minDist = 7.5;
+            for (const c of craters) {
+              const d = Math.hypot(c.lat - lat, c.lon - lon);
+              if (d < minDist) {
+                minDist = d;
+                nearest = c;
+              }
+            }
+            hitCrater = nearest;
+          }
+        }
+
+        if (hitCrater) {
+          if (hoveredCraterRef.current?.id !== hitCrater.id) {
+            hoveredCraterRef.current = hitCrater;
+            setHoveredCrater(hitCrater);
+          }
+          setHoverPos({ x: e.clientX, y: e.clientY });
+        } else if (hoveredCraterRef.current) {
+          hoveredCraterRef.current = null;
+          setHoveredCrater(null);
+        }
+      }
     };
 
     const handlePointerUp = (e: PointerEvent) => {
@@ -789,6 +895,10 @@ export const WebGlMoonViewer: React.FC<WebGlMoonViewerProps> = ({
           if (pinIntersects.length > 0) {
             const crater = pinIntersects[0].object.userData?.crater;
             if (crater) {
+              if (hoveredCraterRef.current) {
+                hoveredCraterRef.current = null;
+                setHoveredCrater(null);
+              }
               onSelectCraterRef.current?.(crater);
               return;
             }
@@ -814,6 +924,10 @@ export const WebGlMoonViewer: React.FC<WebGlMoonViewerProps> = ({
             }
           }
           if (nearest) {
+            if (hoveredCraterRef.current) {
+              hoveredCraterRef.current = null;
+              setHoveredCrater(null);
+            }
             onSelectCraterRef.current?.(nearest);
           }
         }
@@ -877,8 +991,6 @@ export const WebGlMoonViewer: React.FC<WebGlMoonViewerProps> = ({
             targetRotationX.current = THREE.MathUtils.lerp(targetRotationX.current, 0, 0.1);
           } else if (!isWorkbenchModeRef.current) {
             targetRotationY.current += 0.075 * delta;
-          } else if (isOrbitTourActiveRef.current) {
-            targetRotationY.current += 0.12 * delta;
           }
         }
 
@@ -1024,6 +1136,16 @@ export const WebGlMoonViewer: React.FC<WebGlMoonViewerProps> = ({
     };
   }, []);
 
+  const activeCraterDetail = craters.find(
+    (c) => c.id === selectedCrater?.id || c.name?.toLowerCase() === selectedCrater?.name?.toLowerCase()
+  );
+  const activeCraterName = selectedCrater?.name || 'Target Crater';
+  const activeCraterId = selectedCrater?.id || activeCraterDetail?.id;
+  const activeCraterLat = selectedCrater?.lat ?? activeCraterDetail?.lat ?? 0;
+  const activeCraterLon = selectedCrater?.lon ?? activeCraterDetail?.lon ?? 0;
+  const activeSensor = getCraterSensorBadge(activeCraterId);
+  const activePreviewImg = getCraterPreviewImage(activeCraterId, activeCraterLat);
+
   return (
     <div
       ref={mountRef}
@@ -1059,27 +1181,172 @@ export const WebGlMoonViewer: React.FC<WebGlMoonViewerProps> = ({
           <div className="absolute -bottom-6 -left-6 w-2.5 h-2.5 border-b-2 border-l-2 border-[#00f0ff] pointer-events-none" />
           <div className="absolute -bottom-6 -right-6 w-2.5 h-2.5 border-b-2 border-r-2 border-[#00f0ff] pointer-events-none" />
 
-          {/* Floating High-Tech Aerospace Callout Card */}
-          <div className="absolute left-8 -top-3.5 whitespace-nowrap pointer-events-auto flex flex-col gap-0.5 px-3 py-2 rounded-2xl bg-[#080B11]/90 backdrop-blur-2xl border border-[#00f0ff]/60 shadow-[0_12px_40px_rgba(0,240,255,0.4)] animate-in fade-in duration-200">
-            <div className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-[#00f0ff] shadow-[0_0_8px_#00f0ff] animate-pulse" />
-              <span
-                ref={hudNameRef}
-                className="text-xs font-bold font-mono text-white tracking-wider uppercase"
-              >
-                {selectedCrater?.name || 'Target Crater'}
+          {/* Floating High-Tech Aerospace Callout Card with Hover Preview */}
+          <div className="absolute left-8 -top-3.5 pointer-events-auto flex flex-col group cursor-pointer">
+            {/* Primary Pill Header */}
+            <div className="flex items-center gap-2.5 px-3.5 py-2 rounded-2xl bg-[#080B11]/92 backdrop-blur-2xl border border-[#00f0ff]/60 shadow-[0_12px_40px_rgba(0,240,255,0.35)] transition-all duration-300 group-hover:border-[#00f0ff] group-hover:shadow-[0_0_30px_rgba(0,240,255,0.6)]">
+              <div className="flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-[#00f0ff] shadow-[0_0_8px_#00f0ff] animate-pulse" />
+                <span
+                  ref={hudNameRef}
+                  className="text-xs font-bold font-mono text-white tracking-wider uppercase"
+                >
+                  {activeCraterName}
+                </span>
+              </div>
+              <div className="flex items-center gap-2 text-[10px] font-mono text-white/70">
+                <span ref={hudCoordRef} className="text-[#00f0ff] font-semibold">
+                  {selectedCrater ? `${Math.abs(activeCraterLat).toFixed(1)}°${activeCraterLat < 0 ? 'S' : 'N'}, ${Math.abs(activeCraterLon).toFixed(1)}°${activeCraterLon < 0 ? 'W' : 'E'}` : ''}
+                </span>
+                <span className="text-white/30">·</span>
+                <span className="text-emerald-400 font-semibold">TARGET CORRIDOR</span>
+              </div>
+              <span className="hidden sm:inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-mono text-[#00f0ff] bg-[#00f0ff]/10 border border-[#00f0ff]/30 group-hover:bg-[#00f0ff]/20">
+                PREVIEW
               </span>
             </div>
-            <div className="flex items-center gap-2 text-[10px] font-mono text-white/70">
-              <span ref={hudCoordRef} className="text-[#00f0ff] font-semibold">
-                {selectedCrater ? `${Math.abs(selectedCrater.lat).toFixed(1)}°${selectedCrater.lat < 0 ? 'S' : 'N'}, ${Math.abs(selectedCrater.lon).toFixed(1)}°${selectedCrater.lon < 0 ? 'W' : 'E'}` : ''}
-              </span>
-              <span className="text-white/30">·</span>
-              <span className="text-emerald-400 font-semibold">TARGET CORRIDOR</span>
+
+            {/* ── EXPANDED AEROSPACE RECONNAISSANCE DOSSIER (Visible on Hover) ── */}
+            <div className="hidden group-hover:flex flex-col mt-2 w-80 rounded-2xl overflow-hidden bg-[#070b14]/95 backdrop-blur-3xl border border-[#00f0ff]/50 shadow-[0_25px_60px_rgba(0,0,0,0.95),0_0_35px_rgba(0,240,255,0.3)] animate-in fade-in zoom-in-95 duration-200">
+              {/* High-Resolution Orbital Imagery Preview Frame */}
+              <div className="relative h-36 w-full overflow-hidden bg-black">
+                <img
+                  src={activePreviewImg}
+                  alt={activeCraterName}
+                  className="w-full h-full object-cover object-center filter contrast-125 brightness-95 group-hover:scale-105 transition-transform duration-700"
+                />
+                {/* HUD Scanline & Gradient Vignette */}
+                <div className="absolute inset-0 bg-gradient-to-t from-[#070b14] via-transparent to-black/50 pointer-events-none" />
+                <div className="absolute inset-0 bg-[linear-gradient(rgba(0,240,255,0.08)_1px,transparent_1px)] bg-[size:100%_4px] pointer-events-none" />
+
+                {/* Sensor & Resolution Badges */}
+                <div className="absolute top-2 left-2 flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-black/80 backdrop-blur-md border border-[#00f0ff]/40 text-[9px] font-mono text-[#00f0ff] font-bold">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#00f0ff] animate-ping" />
+                  <span>{activeSensor.sensor}</span>
+                </div>
+                <div className="absolute top-2 right-2 px-1.5 py-0.5 rounded-md bg-black/80 backdrop-blur-md border border-white/20 text-[9px] font-mono text-emerald-400 font-bold">
+                  {activeSensor.res}
+                </div>
+
+                {/* Crosshair Overlay Marks */}
+                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-8 h-8 pointer-events-none flex items-center justify-center">
+                  <span className="w-full h-[1px] bg-[#00f0ff]/60 absolute" />
+                  <span className="h-full w-[1px] bg-[#00f0ff]/60 absolute" />
+                  <span className="w-3 h-3 rounded-full border border-[#00f0ff]/80" />
+                </div>
+
+                {/* Bottom Coordinates & Region Tag */}
+                <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between text-[10px] font-mono text-white/90">
+                  <span className="font-semibold text-white truncate max-w-[190px]">
+                    {activeCraterDetail?.region || (Math.abs(activeCraterLat) > 60 ? 'South Polar Highlands' : 'Equatorial Plains')}
+                  </span>
+                  <span className="text-[#00f0ff] font-mono font-bold">
+                    {Math.abs(activeCraterLat).toFixed(2)}°{activeCraterLat < 0 ? 'S' : 'N'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Telemetry Reconnaissance Data Grid */}
+              <div className="p-3 space-y-2.5 font-mono text-xs">
+                <div className="grid grid-cols-2 gap-2 text-[10px]">
+                  <div className="p-2 rounded-xl bg-white/[0.04] border border-white/10">
+                    <span className="text-white/40 block text-[9px] uppercase tracking-wider">Diameter / Depth</span>
+                    <span className="text-white font-semibold text-xs">
+                      {activeCraterDetail?.diameterKm ?? (activeCraterId?.includes('copernicus') ? 93 : 97)} km ⌀ · {activeCraterDetail?.depthKm ?? (activeCraterId?.includes('copernicus') ? 3.8 : 4.0)} km
+                    </span>
+                  </div>
+                  <div className="p-2 rounded-xl bg-white/[0.04] border border-white/10">
+                    <span className="text-white/40 block text-[9px] uppercase tracking-wider">Water-Ice Signature</span>
+                    <span className="text-cyan-300 font-semibold text-xs">
+                      {activeCraterDetail?.waterIceConcentrationWtPct ?? (Math.abs(activeCraterLat) > 60 ? 3.8 : 0.4)} wt% H₂O
+                    </span>
+                  </div>
+                </div>
+
+                {/* PSR & Lighting Condition Bar */}
+                <div className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-[#00f0ff]/10 border border-[#00f0ff]/20 text-[10px]">
+                  <div className="flex items-center gap-1.5 text-white/90">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                    <span>{activeCraterDetail?.psrStatus || (Math.abs(activeCraterLat) > 60 ? 'Permanently Shadowed (PSR)' : 'Sunlit Crater Rim')}</span>
+                  </div>
+                  <span className="text-[#00f0ff] font-bold">
+                    {activeCraterDetail?.surfaceTempKelvin ? `${activeCraterDetail.surfaceTempKelvin} K` : (Math.abs(activeCraterLat) > 60 ? '90 K (-183°C)' : '360 K (+87°C)')}
+                  </span>
+                </div>
+
+                {/* Action Footer Callout */}
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onInspectIn2DRef.current?.();
+                  }}
+                  className="w-full flex items-center justify-between pt-1.5 border-t border-white/10 text-[10px] text-white/60 hover:text-[#00f0ff] transition-colors cursor-pointer"
+                >
+                  <span className="text-emerald-400 font-semibold flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    TARGET LOCKED
+                  </span>
+                  <span className="font-semibold tracking-wider flex items-center gap-1 text-[#00f0ff]">
+                    SWITCH TO 2D ALIGNMENT →
+                  </span>
+                </button>
+              </div>
             </div>
           </div>
         </div>
       </div>
+
+      {/* ── Hover Preview Tooltip for Any Other Crater Dot on 3D Moon ── */}
+      {hoveredCrater && isWorkbenchMode && hoveredCrater.id !== selectedCrater?.id && (
+        <div
+          className="fixed z-50 pointer-events-none transition-all duration-100 ease-out"
+          style={{
+            left: `${Math.min(window.innerWidth - 300, hoverPos.x + 18)}px`,
+            top: `${Math.min(window.innerHeight - 220, Math.max(20, hoverPos.y - 40))}px`,
+          }}
+        >
+          <div className="w-72 rounded-2xl overflow-hidden bg-[#070b14]/95 backdrop-blur-3xl border border-[#00f0ff]/60 shadow-[0_20px_50px_rgba(0,0,0,0.95),0_0_25px_rgba(0,240,255,0.35)] animate-in fade-in duration-150">
+            {/* Thumbnail banner */}
+            <div className="relative h-24 w-full overflow-hidden bg-black">
+              <img
+                src={getCraterPreviewImage(hoveredCrater.id, hoveredCrater.lat)}
+                alt={hoveredCrater.name}
+                className="w-full h-full object-cover filter contrast-125 brightness-95"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-[#070b14] via-transparent to-black/40" />
+              <div className="absolute top-1.5 left-2 px-1.5 py-0.5 rounded bg-black/80 border border-[#00f0ff]/40 text-[9px] font-mono text-[#00f0ff] font-bold">
+                {getCraterSensorBadge(hoveredCrater.id).sensor}
+              </div>
+              <div className="absolute bottom-1.5 left-2 right-2 flex items-center justify-between text-[10px] font-mono text-white font-bold truncate">
+                <span className="truncate">{hoveredCrater.name}</span>
+                <span className="text-[#00f0ff] text-[9px] shrink-0 ml-1">
+                  {Math.abs(hoveredCrater.lat).toFixed(1)}°{hoveredCrater.lat < 0 ? 'S' : 'N'}
+                </span>
+              </div>
+            </div>
+            {/* Telemetry info */}
+            <div className="p-2.5 space-y-1.5 font-mono text-[10px]">
+              <div className="flex items-center justify-between text-white/80">
+                <span className="text-[#00f0ff]">
+                  {Math.abs(hoveredCrater.lat).toFixed(1)}°{hoveredCrater.lat < 0 ? 'S' : 'N'}, {Math.abs(hoveredCrater.lon).toFixed(1)}°{hoveredCrater.lon < 0 ? 'W' : 'E'}
+                </span>
+                <span className="text-white/50">{hoveredCrater.region || 'Lunar Surface'}</span>
+              </div>
+              <div className="flex items-center justify-between text-white/70 pt-1 border-t border-white/10">
+                <span>⌀ {hoveredCrater.diameterKm ?? (hoveredCrater as any).diameter_km ?? 50} km</span>
+                <span className="text-cyan-300">
+                  {hoveredCrater.waterIceConcentrationWtPct ?? (Math.abs(hoveredCrater.lat) > 60 ? '3.8 wt% H₂O' : '0.4 wt%')}
+                </span>
+              </div>
+              <div className="text-[9px] text-emerald-400 font-semibold text-center pt-0.5 flex items-center justify-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                CLICK CRATER TO TARGET & ROTATE
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

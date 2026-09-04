@@ -1,7 +1,7 @@
 import React from 'react';
 import {
   Plus, Minus, RotateCcw, Globe, GitCommit, FlaskConical,
-  ChevronDown, Play, Check, Sliders, Compass, Upload
+  ChevronDown, Play, Check, Sliders, Upload
 } from 'lucide-react';
 import { PipelineStage, type ScenePreset, type LayerVisibility, type PipelineOptions } from '../types';
 import { MapLayerControl } from './MapLayerControl';
@@ -38,11 +38,6 @@ interface MoonWorkbenchOverlayProps {
   pipelineStage: PipelineStage;
   onRunPipeline: () => void;
   telemetryRmse?: number;
-  isOrbitTourActive?: boolean;
-  onToggleOrbitTour?: () => void;
-  probedTarget?: ProbedLocation | null;
-  onCloseProbeTarget?: () => void;
-  onInspectProbedTargetIn2D?: () => void;
   isBackendOnline?: boolean;
 }
 
@@ -63,10 +58,8 @@ export const MoonWorkbenchOverlay: React.FC<MoonWorkbenchOverlayProps> = ({
   onOpenAddFiles,
   pipelineStage,
   onRunPipeline,
-  telemetryRmse = 0.34,
-  isOrbitTourActive = false,
-  onToggleOrbitTour,
-  isBackendOnline = false,
+  telemetryRmse = 0.42,
+  isBackendOnline = true,
 }) => {
   const isRunning = pipelineStage !== PipelineStage.Idle && pipelineStage !== PipelineStage.Done;
   const isDone = pipelineStage === PipelineStage.Done;
@@ -162,20 +155,6 @@ export const MoonWorkbenchOverlay: React.FC<MoonWorkbenchOverlayProps> = ({
 
         <div className="w-px h-3.5 bg-white/20 mx-1" />
 
-        {/* Polar Orbit Tour Toggle */}
-        <button
-          onClick={onToggleOrbitTour}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full font-semibold transition-all cursor-pointer text-xs ${
-            isOrbitTourActive
-              ? 'bg-[#2997FF] text-white shadow-[0_0_12px_rgba(41,151,255,0.6)]'
-              : 'text-white/65 hover:text-white hover:bg-white/10'
-          }`}
-          title="Toggle Chandrayaan-2 Polar Orbit Inspection Mode"
-        >
-          <Compass size={13} className={isOrbitTourActive ? 'animate-spin' : ''} />
-          <span className="hidden md:inline">Orbit Tour</span>
-        </button>
-
         {/* Engine Inspector Trigger Button */}
         <button
           onClick={onOpenEngineInspector}
@@ -186,15 +165,6 @@ export const MoonWorkbenchOverlay: React.FC<MoonWorkbenchOverlayProps> = ({
           <span className="hidden sm:inline">Engine</span>
         </button>
       </div>
-
-      {/* ── 2B. POLAR ORBIT TELEMETRY RIBBON ── */}
-      {isOrbitTourActive && (
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 pointer-events-auto flex items-center gap-2 px-4 py-1.5 rounded-full bg-black/75 backdrop-blur-xl border border-[#2997FF]/50 text-xs font-mono text-white shadow-[0_0_20px_rgba(41,151,255,0.35)] animate-in fade-in duration-200">
-          <span className="w-2 h-2 rounded-full bg-[#2997FF] animate-ping" />
-          <span className="font-bold text-[#2997FF]">CH-2 POLAR ORBIT:</span>
-          <span>100.4 KM ALT · 1.68 KM/S · NADIR CAMERA ACTIVE</span>
-        </div>
-      )}
 
 
 

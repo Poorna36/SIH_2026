@@ -16,6 +16,9 @@ export const AddFilesModal: React.FC<AddFilesModalProps> = ({
 }) => {
   const [dragOver, setDragOver] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [fileRoles, setFileRoles] = useState<('src' | 'ref')[]>([]);
+  const [latitude, setLatitude] = useState('-70.0');
+  const [longitude, setLongitude] = useState('35.0');
   const [pairName, setPairName] = useState('');
   const [sensor, setSensor] = useState('OHRC');
   const [isUploading, setIsUploading] = useState(false);
@@ -27,7 +30,16 @@ export const AddFilesModal: React.FC<AddFilesModalProps> = ({
 
   const handleFilesAdded = (files: FileList | File[]) => {
     const arr = Array.from(files);
+    const newRoles: ('src' | 'ref')[] = arr.map((f, idx) => {
+      const overallIdx = selectedFiles.length + idx;
+      const lower = f.name.toLowerCase();
+      if (lower.includes('ref') || lower.includes('lro') || lower.includes('nac') || overallIdx === 1) {
+        return 'ref';
+      }
+      return 'src';
+    });
     setSelectedFiles((prev) => [...prev, ...arr]);
+    setFileRoles((prev) => [...prev, ...newRoles]);
     setUploadError(null);
   };
 
@@ -41,6 +53,11 @@ export const AddFilesModal: React.FC<AddFilesModalProps> = ({
 
   const handleRemoveFile = (index: number) => {
     setSelectedFiles((prev) => prev.filter((_, i) => i !== index));
+    setFileRoles((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const handleRoleChange = (index: number, role: 'src' | 'ref') => {
+    setFileRoles((prev) => prev.map((r, i) => (i === index ? role : r)));
   };
 
   const handleUpload = async () => {
@@ -53,8 +70,19 @@ export const AddFilesModal: React.FC<AddFilesModalProps> = ({
     setUploadError(null);
     setUploadSuccess(null);
 
+    const parsedLat = parseFloat(latitude);
+    const parsedLon = parseFloat(longitude);
+
     try {
-      const res = await uploadMissionFiles(selectedFiles, pairName, sensor);
+      const res = await uploadMissionFiles(
+        selectedFiles,
+        pairName,
+        sensor,
+        fileRoles,
+        isNaN(parsedLat) ? undefined : parsedLat,
+        isNaN(parsedLon) ? undefined : parsedLon
+      );
+
       if (res && res.status === 'success') {
         setUploadSuccess(res.message);
 
@@ -63,10 +91,10 @@ export const AddFilesModal: React.FC<AddFilesModalProps> = ({
           const newScene: ScenePreset = {
             id: res.pair_id,
             name: res.name || res.pair_id.replace(/_/g, ' ').toUpperCase(),
-            lat: -71.5,
-            lon: 42.0,
+            lat: res.pair?.latitude_center_deg ?? (!isNaN(parsedLat) ? parsedLat : -70.0),
+            lon: res.pair?.longitude_center_deg ?? (!isNaN(parsedLon) ? parsedLon : 35.0),
             height: 80000,
-            terrainClass: 'polar_highland',
+            terrainClass: (res.pair?.terrain_class as any) ?? 'polar_highland',
             solarIncidenceDeg: 66.0,
             solarAzimuthDeg: 175.0,
             gsdM: sensor === 'OHRC' ? 0.31 : 0.50,
@@ -77,9 +105,10 @@ export const AddFilesModal: React.FC<AddFilesModalProps> = ({
             onPairCreated(newScene);
             onClose();
             setSelectedFiles([]);
+            setFileRoles([]);
             setPairName('');
             setUploadSuccess(null);
-          }, 1200);
+          }, 1000);
         }
       } else {
         setUploadError('Failed to upload files. Ensure FastAPI backend is online.');
@@ -156,12 +185,42 @@ export const AddFilesModal: React.FC<AddFilesModalProps> = ({
           </div>
         </div>
 
+        {/* Target Coordinates */}
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="text-[10px] font-bold text-white/50 uppercase tracking-wider block mb-1">
+              Target Latitude (°N/S)
+            </label>
+            <input
+              type="number"
+              step="0.1"
+              value={latitude}
+              onChange={(e) => setLatitude(e.target.value)}
+              placeholder="-70.0"
+              className="w-full bg-white/[0.04] border border-white/10 focus:border-[#2997FF] rounded-xl px-3 py-1.5 text-xs text-white placeholder-white/25 focus:outline-none transition-all font-mono"
+            />
+          </div>
+          <div>
+            <label className="text-[10px] font-bold text-white/50 uppercase tracking-wider block mb-1">
+              Target Longitude (°E/W)
+            </label>
+            <input
+              type="number"
+              step="0.1"
+              value={longitude}
+              onChange={(e) => setLongitude(e.target.value)}
+              placeholder="35.0"
+              className="w-full bg-white/[0.04] border border-white/10 focus:border-[#2997FF] rounded-xl px-3 py-1.5 text-xs text-white placeholder-white/25 focus:outline-none transition-all font-mono"
+            />
+          </div>
+        </div>
+
         {/* Hidden native input */}
         <input
           ref={fileInputRef}
           type="file"
           multiple
-          accept=".xml,.img,.tif,.tiff,.qub,.png,.jpg,.jpeg"
+          accept=".xml,.img,.tif,.tiff,.qub,.png,.jpg,.jpeg,.zip"
           onChange={(e) => {
             if (e.target.files) handleFilesAdded(e.target.files);
           }}
@@ -190,17 +249,20 @@ export const AddFilesModal: React.FC<AddFilesModalProps> = ({
             Click to browse or drop orbital files here
           </p>
           <p className="text-[11px] text-white/40 mt-1 font-mono">
-            Accepts .IMG, .TIF, .TIFF, .QUB, .PNG, .JPG (Source & Reference)
+            Accepts ISRO PDS-4 (.XML + .IMG), GeoTIFF, .ZIP, .PNG, .JPG (Assign Source & Reference below)
           </p>
         </div>
 
-        {/* Selected files list */}
+        {/* Selected files list with Role Assignment */}
         {selectedFiles.length > 0 && (
-          <div className="space-y-1.5 max-h-36 overflow-y-auto sidebar-scroll pr-1">
+          <div className="space-y-1.5 max-h-40 overflow-y-auto sidebar-scroll pr-1">
             <div className="flex items-center justify-between text-[10px] text-white/40 font-mono px-1">
               <span>SELECTED FILES ({selectedFiles.length})</span>
               <button
-                onClick={() => setSelectedFiles([])}
+                onClick={() => {
+                  setSelectedFiles([]);
+                  setFileRoles([]);
+                }}
                 className="text-red-400 hover:text-red-300 cursor-pointer"
               >
                 Clear All
@@ -209,24 +271,40 @@ export const AddFilesModal: React.FC<AddFilesModalProps> = ({
             {selectedFiles.map((file, i) => (
               <div
                 key={i}
-                className="flex items-center justify-between p-2 rounded-xl bg-white/[0.03] border border-white/10 text-xs"
+                className="flex items-center justify-between gap-2 p-2 rounded-xl bg-white/[0.03] border border-white/10 text-xs"
               >
-                <div className="flex items-center gap-2 truncate">
+                <div className="flex items-center gap-2 min-w-0 flex-1">
                   <FileText size={14} className="text-[#2997FF] shrink-0" />
                   <span className="font-mono text-xs text-white truncate">{file.name}</span>
-                </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <span className="text-[10px] text-white/40 font-mono">
-                    {(file.size / 1024).toFixed(0)} KB
+                  <span className="text-[10px] text-white/40 font-mono shrink-0">
+                    ({(file.size / 1024).toFixed(0)} KB)
                   </span>
+                </div>
+
+                {/* Role Selector */}
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <select
+                    value={fileRoles[i] || (i === 1 ? 'ref' : 'src')}
+                    onChange={(e) => handleRoleChange(i, e.target.value as 'src' | 'ref')}
+                    className={`rounded-lg px-2 py-1 text-[10px] font-semibold uppercase tracking-wider border focus:outline-none transition-all cursor-pointer ${
+                      (fileRoles[i] || (i === 1 ? 'ref' : 'src')) === 'src'
+                        ? 'bg-[#0071E3]/20 text-[#2997FF] border-[#2997FF]/40'
+                        : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                    }`}
+                  >
+                    <option value="src" className="bg-[#0B0D13] text-white">Source (Mission)</option>
+                    <option value="ref" className="bg-[#0B0D13] text-white">Reference (Baseline)</option>
+                  </select>
+
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
                       handleRemoveFile(i);
                     }}
-                    className="p-0.5 rounded text-white/40 hover:text-white hover:bg-white/10 cursor-pointer"
+                    className="p-1 rounded-md text-white/40 hover:text-white hover:bg-white/10 cursor-pointer"
+                    title="Remove file"
                   >
-                    <X size={12} />
+                    <X size={13} />
                   </button>
                 </div>
               </div>

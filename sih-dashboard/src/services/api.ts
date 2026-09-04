@@ -183,6 +183,12 @@ export interface BackendSLZDiagnostic {
   go_no_go: 'GO' | 'NO-GO' | 'MARGINAL';
   terrain_roughness_cm?: number;
   crater_density_km2?: number;
+  optimal_landing_site?: {
+    lat: number;
+    lon: number;
+    elevation_m?: number;
+    hazard_probability?: number;
+  };
 }
 
 export interface BackendSpectralData {
@@ -313,6 +319,24 @@ export interface BackendTelemetryDiagnostic {
   runtime_s: number;
   ladder_level: number;
   utc?: string;
+  homography_matrix?: number[][];
+  translation_dx_px?: number;
+  translation_dy_px?: number;
+  translation_dx_m?: number;
+  translation_dy_m?: number;
+  rotation_deg?: number;
+  scale_factor?: number;
+  matcher_benchmarks?: Record<
+    string,
+    {
+      rmse_px?: number;
+      inlier_ratio?: number;
+      inliers?: number;
+      candidates?: number;
+      status?: string;
+      runtime_s?: number;
+    }
+  >;
 }
 
 /** Get authentic co-registration telemetry */
@@ -326,32 +350,50 @@ export async function getCraterCatalog(query?: string): Promise<BackendCraterDet
   return apiFetch<BackendCraterDetail[]>(url);
 }
 
-/** Upload user-provided mission imagery files */
+/** Upload user-provided mission imagery files with role selection, coordinates, and timeout */
 export async function uploadMissionFiles(
   files: File[],
   pairName?: string,
-  sensor?: string
-): Promise<{ status: string; pair_id: string; name: string; message: string; pair?: any } | null> {
+  sensor?: string,
+  roles?: string[],
+  lat?: number,
+  lon?: number
+): Promise<{ status: string; pair_id: string; name: string; message: string; pair?: any }> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 60000);
+
   try {
     const formData = new FormData();
     files.forEach((file) => {
       formData.append('files', file);
     });
-    if (pairName) formData.append('pair_name', pairName);
-    if (sensor) formData.append('sensor', sensor);
+    if (pairName && pairName.trim()) formData.append('pair_name', pairName.trim());
+    if (sensor && sensor.trim()) formData.append('sensor', sensor.trim());
+    if (roles && roles.length > 0) formData.append('roles', roles.join(','));
+    if (lat !== undefined && !isNaN(lat)) formData.append('lat', lat.toString());
+    if (lon !== undefined && !isNaN(lon)) formData.append('lon', lon.toString());
 
     const res = await fetch(`${API_BASE}/api/datasets/upload`, {
       method: 'POST',
       body: formData,
+      signal: controller.signal,
     });
+
     if (!res.ok) {
-      const err = await res.json().catch(() => ({ detail: 'Upload failed' }));
-      throw new Error(err.detail || 'Upload failed');
+      const err = await res.json().catch(() => ({ detail: `Upload failed (status: ${res.status})` }));
+      throw new Error(err.detail || `Upload failed (status: ${res.status})`);
     }
+
     return await res.json();
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.name === 'AbortError') {
+      throw new Error('Upload timed out after 60 seconds. Please check your network or try smaller files.');
+    }
     console.error('Failed to upload mission files:', error);
-    return null;
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
+
 
