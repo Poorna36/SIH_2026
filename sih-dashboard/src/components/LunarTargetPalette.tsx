@@ -139,9 +139,28 @@ export const LunarTargetPalette: React.FC<LunarTargetPaletteProps> = ({
                 <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
                 <input
                   type="text"
+                  autoFocus
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search any crater or coord..."
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      if (filteredTargets.length > 0) {
+                        const target = filteredTargets[0];
+                        onSelectScene({
+                          id: target.id,
+                          name: target.name,
+                          lat: target.lat,
+                          lon: target.lon,
+                          height: target.height,
+                          description: target.description,
+                        });
+                        onClose();
+                      } else {
+                        handleSynthesizeCustomCrater();
+                      }
+                    }
+                  }}
+                  placeholder="Search crater (e.g. Copernicus, Tycho, Shackleton)..."
                   className="w-full bg-white/[0.06] border border-white/10 focus:border-[#2997FF] rounded-full pl-8 pr-7 py-1 text-xs text-white placeholder-white/30 focus:outline-none transition-all font-mono"
                 />
                 {searchQuery && (

@@ -11,6 +11,7 @@ import io
 import json
 import math
 import logging
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, HTTPException
@@ -80,6 +81,7 @@ class TelemetryDiagnostic(BaseModel):
     matcher_winner: str
     runtime_s: float
     ladder_level: int
+    utc: Optional[str] = None
 
 
 class CraterDetail(BaseModel):
@@ -947,11 +949,13 @@ async def get_telemetry_diagnostics(pair_id: str):
     candidate_count = 48
     spatial_cov = 0.82
 
+    utc_ts = None
     if processed_gt.exists():
         try:
             with open(processed_gt, "r", encoding="utf-8") as f:
                 data = json.load(f)
             rmse = float(data.get("rmse_px", 0.34))
+            utc_ts = data.get("utc") or data.get("timestamp")
             kps = data.get("keypoints", [])
             candidate_count = len(kps)
             inliers = [k for k in kps if k.get("is_inlier")]
@@ -965,6 +969,9 @@ async def get_telemetry_diagnostics(pair_id: str):
                 spatial_cov = round(min(0.96, ((max_x - min_x) * (max_y - min_y)) / (800 * 800) * 1.5), 2)
         except Exception as e:
             logger.error("Failed to load telemetry from %s: %s", processed_gt, e)
+
+    if not utc_ts:
+        utc_ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     crater = next((c for c in CRATER_CATALOG if c["id"] == resolved or resolved in c["id"]), None)
     solar_inc = crater["solar_incidence_deg"] if crater else 68.2
@@ -986,5 +993,6 @@ async def get_telemetry_diagnostics(pair_id: str):
         matcher_winner="lightglue",
         runtime_s=round(6.4 + (hash(resolved) % 15) * 0.1, 1),
         ladder_level=2,
+        utc=utc_ts,
     )
 

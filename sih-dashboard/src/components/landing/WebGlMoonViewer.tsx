@@ -119,7 +119,12 @@ export const WebGlMoonViewer: React.FC<WebGlMoonViewerProps> = ({
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const craterPinsGroupRef = useRef<THREE.Group | null>(null);
   const keyLightRef = useRef<THREE.DirectionalLight | null>(null);
-  const probeBeaconRef = useRef<THREE.Group | null>(null);
+  const moonMeshRef = useRef<THREE.Mesh | null>(null);
+  const targetBeaconGroupRef = useRef<THREE.Group | null>(null);
+  const selectedCraterRef = useRef(selectedCrater);
+  const hudRef = useRef<HTMLDivElement | null>(null);
+  const hudNameRef = useRef<HTMLSpanElement | null>(null);
+  const hudCoordRef = useRef<HTMLSpanElement | null>(null);
 
   const targetRotationY = useRef(0);
   const targetRotationX = useRef(0);
@@ -140,6 +145,52 @@ export const WebGlMoonViewer: React.FC<WebGlMoonViewerProps> = ({
   const moonOffsetRef = useRef({ x: 1.48, y: 0 });
   const targetCameraZ = useRef(3.8);
 
+  const getCraterPositionOnMesh = (lat: number, lon: number, r: number = 0.95 * 1.004) => {
+    const theta = ((90 - lat) * Math.PI) / 180;
+    const phi = (0.5 + lon / 360) * 2 * Math.PI;
+    const px = -r * Math.cos(phi) * Math.sin(theta);
+    const py = r * Math.cos(theta);
+    const pz = r * Math.sin(phi) * Math.sin(theta);
+    return new THREE.Vector3(px, py, pz);
+  };
+
+  const updateTargetCraterBeacon = (crater: ScenePreset | null) => {
+    selectedCraterRef.current = crater;
+    if (hudNameRef.current && crater) {
+      hudNameRef.current.innerText = crater.name;
+    }
+    if (hudCoordRef.current && crater) {
+      hudCoordRef.current.innerText = `${Math.abs(crater.lat).toFixed(1)}°${crater.lat < 0 ? 'S' : 'N'}, ${Math.abs(crater.lon).toFixed(1)}°${crater.lon < 0 ? 'W' : 'E'}`;
+    }
+
+    const beacon = targetBeaconGroupRef.current;
+    if (!beacon) return;
+
+    if (!crater || !isWorkbenchModeRef.current) {
+      beacon.visible = false;
+      if (hudRef.current) hudRef.current.style.display = 'none';
+      return;
+    }
+
+    const pMesh = getCraterPositionOnMesh(crater.lat, crater.lon, 0.95 * 1.006);
+    beacon.position.copy(pMesh);
+    const normal = pMesh.clone().normalize();
+    beacon.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), normal);
+    beacon.visible = true;
+
+    // Transform position from moonMesh to moonGroup space (moonMesh has rotation.y = -Math.PI / 2):
+    const pGroup = pMesh.clone().applyEuler(new THREE.Euler(0, -Math.PI / 2, 0, 'XYZ'));
+
+    // Compute Euler angles (order 'YXZ') to align crater directly with camera along +Z:
+    const rotX = Math.atan2(pGroup.y, pGroup.z);
+    const z_intermediate = pGroup.y * Math.sin(rotX) + pGroup.z * Math.cos(rotX);
+    const rotY = Math.atan2(-pGroup.x, z_intermediate);
+
+    targetRotationX.current = rotX;
+    targetRotationY.current = rotY;
+    targetCameraZ.current = 2.6;
+  };
+
   useEffect(() => {
     onSelectCraterRef.current = onSelectCrater;
   }, [onSelectCrater]);
@@ -154,6 +205,12 @@ export const WebGlMoonViewer: React.FC<WebGlMoonViewerProps> = ({
 
   useEffect(() => {
     isWorkbenchModeRef.current = isWorkbenchMode;
+    if (isWorkbenchMode && selectedCraterRef.current) {
+      updateTargetCraterBeacon(selectedCraterRef.current);
+    } else if (!isWorkbenchMode) {
+      if (targetBeaconGroupRef.current) targetBeaconGroupRef.current.visible = false;
+      if (hudRef.current) hudRef.current.style.display = 'none';
+    }
   }, [isWorkbenchMode]);
 
   useEffect(() => {
@@ -165,7 +222,7 @@ export const WebGlMoonViewer: React.FC<WebGlMoonViewerProps> = ({
       waterIceGroupRef.current.visible = Boolean(layers?.waterIce);
     }
     if (craterPinsGroupRef.current) {
-      craterPinsGroupRef.current.visible = Boolean(layers?.craters ?? true);
+      craterPinsGroupRef.current.visible = Boolean(layers?.craters);
     }
     if (moonMaterialRef.current) {
       if (layers?.dem) {
@@ -201,10 +258,9 @@ export const WebGlMoonViewer: React.FC<WebGlMoonViewerProps> = ({
   }, [cameraZoom]);
 
   useEffect(() => {
+    selectedCraterRef.current = selectedCrater;
     if (selectedCrater && isWorkbenchModeRef.current) {
-      targetRotationY.current = (selectedCrater.lon) * (Math.PI / 180);
-      targetRotationX.current = (-selectedCrater.lat) * (Math.PI / 180) * 0.4;
-      targetCameraZ.current = 2.6;
+      updateTargetCraterBeacon(selectedCrater);
     }
   }, [selectedCrater]);
 
@@ -311,6 +367,7 @@ export const WebGlMoonViewer: React.FC<WebGlMoonViewerProps> = ({
 
     // 5. Main Moon Group - Optimized smooth geometry
     const moonGroup = new THREE.Group();
+    moonGroup.rotation.order = 'YXZ';
     moonGroupRef.current = moonGroup;
     updateMoonPosition();
     scene.add(moonGroup);
@@ -337,6 +394,7 @@ export const WebGlMoonViewer: React.FC<WebGlMoonViewerProps> = ({
     moonMesh.rotation.y = -Math.PI / 2;
     moonGroup.add(moonMesh);
     moonMaterialRef.current = moonMaterial;
+    moonMeshRef.current = moonMesh;
 
     // Selenographic Coordinate Grid (Lat/Lon parallels and meridians)
     const gridGroup = new THREE.Group();
@@ -415,39 +473,88 @@ export const WebGlMoonViewer: React.FC<WebGlMoonViewerProps> = ({
     // 3D Glowing Crater Pins on Lunar Surface
     const craterPinsGroup = new THREE.Group();
     craterPinsGroupRef.current = craterPinsGroup;
-    craterPinsGroup.visible = Boolean(layersRef.current?.craters ?? true) && isWorkbenchModeRef.current;
+    craterPinsGroup.visible = Boolean(layersRef.current?.craters);
     moonMesh.add(craterPinsGroup);
 
-    // 3D Glowing Surface Probe Beacon
-    const probeBeacon = new THREE.Group();
-    probeBeacon.visible = false;
-    moonMesh.add(probeBeacon);
-    probeBeaconRef.current = probeBeacon;
+    // 3D Targeted Crater Beacon & Reticle System (for currently selected crater)
+    const targetBeaconGroup = new THREE.Group();
+    targetBeaconGroup.visible = false;
+    moonMesh.add(targetBeaconGroup);
+    targetBeaconGroupRef.current = targetBeaconGroup;
 
-    const probeDot = new THREE.Mesh(
-      new THREE.SphereGeometry(0.022, 16, 16),
-      new THREE.MeshBasicMaterial({ color: 0x00ffff })
+    // 1. Outer Pulsing Target Ring (Electric Cyan)
+    const targetOuterRing = new THREE.Mesh(
+      new THREE.RingGeometry(0.040, 0.056, 36),
+      new THREE.MeshBasicMaterial({
+        color: 0x00f0ff,
+        side: THREE.DoubleSide,
+        transparent: true,
+        opacity: 0.95,
+      })
     );
-    probeBeacon.add(probeDot);
+    targetOuterRing.rotation.x = Math.PI / 2;
+    targetBeaconGroup.add(targetOuterRing);
 
-    const probeRing = new THREE.Mesh(
-      new THREE.RingGeometry(0.032, 0.046, 32),
-      new THREE.MeshBasicMaterial({ color: 0x00ffff, side: THREE.DoubleSide, transparent: true, opacity: 0.85 })
+    // 2. Inner Tactical Reticle Ring (Emerald Green)
+    const targetInnerRing = new THREE.Mesh(
+      new THREE.RingGeometry(0.018, 0.028, 36),
+      new THREE.MeshBasicMaterial({
+        color: 0x00ff88,
+        side: THREE.DoubleSide,
+        transparent: true,
+        opacity: 0.9,
+      })
     );
-    probeRing.rotation.x = Math.PI / 2;
-    probeBeacon.add(probeRing);
+    targetInnerRing.rotation.x = Math.PI / 2;
+    targetBeaconGroup.add(targetInnerRing);
+
+    // 3. Center Target Core Bead (Crisp Pure White)
+    const targetCenterDot = new THREE.Mesh(
+      new THREE.SphereGeometry(0.015, 16, 16),
+      new THREE.MeshBasicMaterial({ color: 0xffffff })
+    );
+    targetBeaconGroup.add(targetCenterDot);
+
+    // 4. Tactical Reticle Cardinal Crosshair Ticks
+    const crosshairMat = new THREE.MeshBasicMaterial({ color: 0x00f0ff, transparent: true, opacity: 0.9 });
+    const tickGeoH = new THREE.BoxGeometry(0.14, 0.003, 0.003);
+    const tickGeoV = new THREE.BoxGeometry(0.003, 0.003, 0.14);
+    const tickH = new THREE.Mesh(tickGeoH, crosshairMat);
+    const tickV = new THREE.Mesh(tickGeoV, crosshairMat);
+    targetBeaconGroup.add(tickH);
+    targetBeaconGroup.add(tickV);
+
+    // 5. Vertical Holographic Laser Light Beam / Pillar
+    const pillarGeo = new THREE.CylinderGeometry(0.003, 0.016, 0.32, 16);
+    pillarGeo.translate(0, 0.16, 0); // extend outward from ground
+    const pillarMat = new THREE.MeshBasicMaterial({
+      color: 0x00f0ff,
+      transparent: true,
+      opacity: 0.7,
+    });
+    const laserPillar = new THREE.Mesh(pillarGeo, pillarMat);
+    targetBeaconGroup.add(laserPillar);
+
+    // 6. Glowing Beacon Tip at the top of the laser beam
+    const tipGeo = new THREE.SphereGeometry(0.012, 12, 12);
+    tipGeo.translate(0, 0.32, 0);
+    const tipMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+    const laserTip = new THREE.Mesh(tipGeo, tipMat);
+    targetBeaconGroup.add(laserTip);
+
+    // Initialize selected crater beacon on mount
+    if (selectedCraterRef.current && isWorkbenchModeRef.current) {
+      updateTargetCraterBeacon(selectedCraterRef.current);
+    }
+
+
 
     const renderCraterDots = (items: CraterDetail[]) => {
       while (craterPinsGroup.children.length > 0) {
         craterPinsGroup.remove(craterPinsGroup.children[0]);
       }
       items.forEach((crater) => {
-        const latRad = (crater.lat * Math.PI) / 180;
-        const lonRad = ((crater.lon - 90) * Math.PI) / 180;
-        const r = radius * 1.004;
-        const px = r * Math.cos(latRad) * Math.sin(lonRad);
-        const py = r * Math.sin(latRad);
-        const pz = r * Math.cos(latRad) * Math.cos(lonRad);
+        const p = getCraterPositionOnMesh(crater.lat, crater.lon, radius * 1.004);
 
         const dotGeo = new THREE.SphereGeometry(0.018, 12, 12);
         const dotMat = new THREE.MeshBasicMaterial({
@@ -455,7 +562,7 @@ export const WebGlMoonViewer: React.FC<WebGlMoonViewerProps> = ({
         });
         const dot = new THREE.Mesh(dotGeo, dotMat);
         dot.userData = { crater };
-        dot.position.set(px, py, pz);
+        dot.position.copy(p);
         craterPinsGroup.add(dot);
       });
     };
@@ -660,7 +767,8 @@ export const WebGlMoonViewer: React.FC<WebGlMoonViewerProps> = ({
 
       targetRotationY.current += deltaX * 0.005;
       targetRotationX.current += deltaY * 0.005;
-      targetRotationX.current = Math.max(-0.6, Math.min(0.6, targetRotationX.current));
+      // Allow full selenographic polar rotation from -90° to +90°
+      targetRotationX.current = Math.max(-1.52, Math.min(1.52, targetRotationX.current));
 
       previousPointerPosition.current = { x: e.clientX, y: e.clientY };
     };
@@ -687,21 +795,27 @@ export const WebGlMoonViewer: React.FC<WebGlMoonViewerProps> = ({
           }
         }
 
-        // 2. Click on general lunar surface to probe coordinates
+        // 2. Click on general lunar surface: select nearest catalog crater if clicked within range
         const intersects = raycaster.intersectObject(moonMesh);
-        if (intersects.length > 0) {
+        if (intersects.length > 0 && craters && craters.length > 0) {
           const pt = intersects[0].point.clone();
           moonMesh.worldToLocal(pt);
           const r = pt.length();
           const lat = Math.asin(Math.max(-1, Math.min(1, pt.y / r))) * (180 / Math.PI);
-          const lon = Math.atan2(pt.x, pt.z) * (180 / Math.PI);
+          const lon = Math.atan2(-pt.z, pt.x) * (180 / Math.PI);
 
-          if (probeBeaconRef.current) {
-            probeBeaconRef.current.position.copy(pt.clone().normalize().multiplyScalar(radius * 1.015));
-            probeBeaconRef.current.visible = true;
+          let nearest = null;
+          let minDist = 12.0;
+          for (const c of craters) {
+            const d = Math.hypot(c.lat - lat, c.lon - lon);
+            if (d < minDist) {
+              minDist = d;
+              nearest = c;
+            }
           }
-
-          onProbeLocationRef.current?.(parseFloat(lat.toFixed(2)), parseFloat(lon.toFixed(2)));
+          if (nearest) {
+            onSelectCraterRef.current?.(nearest);
+          }
         }
       }
     };
@@ -748,7 +862,7 @@ export const WebGlMoonViewer: React.FC<WebGlMoonViewerProps> = ({
       const currentMoonX = moonOffsetRef.current.x;
 
       if (craterPinsGroupRef.current) {
-        craterPinsGroupRef.current.visible = isWorkbenchModeRef.current;
+        craterPinsGroupRef.current.visible = Boolean(layersRef.current?.craters);
       }
 
       // Moon Rotation
@@ -770,6 +884,70 @@ export const WebGlMoonViewer: React.FC<WebGlMoonViewerProps> = ({
           (targetRotationX.current - moonGroupRef.current.rotation.x) * 0.08;
       }
 
+      // Pulse 3D Targeting Reticle
+      if (targetBeaconGroupRef.current && targetBeaconGroupRef.current.visible) {
+        const pulse = 1.0 + 0.22 * Math.sin(clock.getElapsedTime() * 4.5);
+        targetOuterRing.scale.set(pulse, pulse, pulse);
+        (targetOuterRing.material as THREE.MeshBasicMaterial).opacity = 0.7 + 0.3 * Math.cos(clock.getElapsedTime() * 4.5);
+        targetInnerRing.scale.set(1.0 / pulse, 1.0 / pulse, 1.0 / pulse);
+        (laserPillar.material as THREE.MeshBasicMaterial).opacity = 0.5 + 0.3 * Math.sin(clock.getElapsedTime() * 3.0);
+      }
+
+      (window as any).__moonCheck = {
+        hud: Boolean(hudRef.current),
+        beacon: Boolean(targetBeaconGroupRef.current),
+        beaconVis: Boolean(targetBeaconGroupRef.current?.visible),
+        isWorkbench: Boolean(isWorkbenchModeRef.current),
+        selectedCrater: Boolean(selectedCraterRef.current),
+        craterName: selectedCraterRef.current?.name,
+        moonMesh: Boolean(moonMeshRef.current),
+      };
+
+      // Project Target Crater to 2D Screen for 60fps Aerospace HUD Callout Pin
+      if (
+        hudRef.current &&
+        targetBeaconGroupRef.current &&
+        targetBeaconGroupRef.current.visible &&
+        isWorkbenchModeRef.current &&
+        selectedCraterRef.current &&
+        moonMeshRef.current
+      ) {
+        const worldPos = new THREE.Vector3();
+        targetBeaconGroupRef.current.getWorldPosition(worldPos);
+
+        const moonCenter = new THREE.Vector3();
+        moonMeshRef.current.getWorldPosition(moonCenter);
+        const surfaceNormal = worldPos.clone().sub(moonCenter).normalize();
+        const camDir = camera.position.clone().sub(worldPos).normalize();
+        const dot = surfaceNormal.dot(camDir);
+        const isFacing = dot > -0.1; // More permissive threshold
+
+        (window as any).__moonDebug = {
+          worldPos: [worldPos.x, worldPos.y, worldPos.z],
+          moonCenter: [moonCenter.x, moonCenter.y, moonCenter.z],
+          camPos: [camera.position.x, camera.position.y, camera.position.z],
+          dot,
+          isFacing,
+          visible: targetBeaconGroupRef.current.visible,
+          crater: selectedCraterRef.current?.name,
+        };
+
+        if (isFacing) {
+          const proj = worldPos.clone().project(camera);
+          const w = container.clientWidth;
+          const h = container.clientHeight;
+          const sx = (proj.x * 0.5 + 0.5) * w;
+          const sy = (-proj.y * 0.5 + 0.5) * h;
+
+          hudRef.current.style.display = 'block';
+          hudRef.current.style.transform = `translate3d(${sx}px, ${sy}px, 0)`;
+        } else {
+          hudRef.current.style.display = 'none';
+        }
+      } else if (hudRef.current) {
+        hudRef.current.style.display = 'none';
+      }
+
       // Real 3D Satellite Attitude & Orbit: Only on landing page (smoothly hidden in backend workbench)
       if (satGroupRef.current) {
         const targetScale = isWorkbenchModeRef.current ? 0.0 : (isLaunchingRef.current ? 0.25 : 0.75);
@@ -777,7 +955,6 @@ export const WebGlMoonViewer: React.FC<WebGlMoonViewerProps> = ({
         satGroupRef.current.visible = satGroupRef.current.scale.x > 0.01;
 
         if (satGroupRef.current.visible) {
-          // (2 * Math.PI) / 20.0 = 0.314159 rad/sec -> 1 full orbit every 20 seconds!
           const orbitSpeed = isLaunchingRef.current ? 1.2 : (Math.PI * 2) / 20.0;
           orbitAngle += orbitSpeed * delta;
           const rawX = Math.cos(orbitAngle) * orbitRadius;
@@ -791,7 +968,6 @@ export const WebGlMoonViewer: React.FC<WebGlMoonViewerProps> = ({
             satPos.z
           );
 
-          // Nadir pointing: camera points at Moon center, solar panels catch sunlight
           satGroupRef.current.lookAt(currentMoonX, 0, 0);
           satGroupRef.current.rotateZ(orbitAngle * 0.15);
         }
@@ -853,6 +1029,53 @@ export const WebGlMoonViewer: React.FC<WebGlMoonViewerProps> = ({
         ref={canvasRef}
         className="w-full h-full"
       />
+
+      {/* 60fps Aerospace HUD Target Reticle & Callout Pin */}
+      <div
+        ref={hudRef}
+        className="pointer-events-none absolute top-0 left-0 z-30 -translate-x-1/2 -translate-y-1/2 will-change-transform"
+        style={{ display: 'none' }}
+      >
+        <div className="relative flex items-center justify-center">
+          {/* Animated Sonar Radar Ping */}
+          <span className="absolute w-14 h-14 rounded-full border border-[#00f0ff]/50 animate-ping pointer-events-none" />
+
+          {/* Precision Reticle Rings */}
+          <span className="absolute w-10 h-10 rounded-full border-2 border-[#00f0ff] shadow-[0_0_15px_#00f0ff] pointer-events-none" />
+          <span className="absolute w-6 h-6 rounded-full border border-emerald-400/80 shadow-[0_0_8px_#10b981] pointer-events-none" />
+          <span className="w-2.5 h-2.5 rounded-full bg-white shadow-[0_0_10px_#ffffff] pointer-events-none" />
+
+          {/* Cardinal Crosshairs */}
+          <div className="absolute w-16 h-[1.5px] bg-gradient-to-r from-transparent via-[#00f0ff] to-transparent shadow-[0_0_8px_#00f0ff] pointer-events-none" />
+          <div className="absolute h-16 w-[1.5px] bg-gradient-to-b from-transparent via-[#00f0ff] to-transparent shadow-[0_0_8px_#00f0ff] pointer-events-none" />
+
+          {/* Tactical Corner Brackets */}
+          <div className="absolute -top-6 -left-6 w-2.5 h-2.5 border-t-2 border-l-2 border-[#00f0ff] pointer-events-none" />
+          <div className="absolute -top-6 -right-6 w-2.5 h-2.5 border-t-2 border-r-2 border-[#00f0ff] pointer-events-none" />
+          <div className="absolute -bottom-6 -left-6 w-2.5 h-2.5 border-b-2 border-l-2 border-[#00f0ff] pointer-events-none" />
+          <div className="absolute -bottom-6 -right-6 w-2.5 h-2.5 border-b-2 border-r-2 border-[#00f0ff] pointer-events-none" />
+
+          {/* Floating High-Tech Aerospace Callout Card */}
+          <div className="absolute left-8 -top-3.5 whitespace-nowrap pointer-events-auto flex flex-col gap-0.5 px-3 py-2 rounded-2xl bg-[#080B11]/90 backdrop-blur-2xl border border-[#00f0ff]/60 shadow-[0_12px_40px_rgba(0,240,255,0.4)] animate-in fade-in duration-200">
+            <div className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-[#00f0ff] shadow-[0_0_8px_#00f0ff] animate-pulse" />
+              <span
+                ref={hudNameRef}
+                className="text-xs font-bold font-mono text-white tracking-wider uppercase"
+              >
+                {selectedCrater?.name || 'Target Crater'}
+              </span>
+            </div>
+            <div className="flex items-center gap-2 text-[10px] font-mono text-white/70">
+              <span ref={hudCoordRef} className="text-[#00f0ff] font-semibold">
+                {selectedCrater ? `${Math.abs(selectedCrater.lat).toFixed(1)}°${selectedCrater.lat < 0 ? 'S' : 'N'}, ${Math.abs(selectedCrater.lon).toFixed(1)}°${selectedCrater.lon < 0 ? 'W' : 'E'}` : ''}
+              </span>
+              <span className="text-white/30">·</span>
+              <span className="text-emerald-400 font-semibold">TARGET CORRIDOR</span>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 };

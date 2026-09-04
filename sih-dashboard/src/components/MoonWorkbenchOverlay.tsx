@@ -1,7 +1,7 @@
 import React from 'react';
 import {
   Plus, Minus, RotateCcw, Globe, GitCommit, FlaskConical,
-  ChevronDown, Play, Check, Sliders, Compass, X
+  ChevronDown, Play, Check, Sliders, Compass, Upload
 } from 'lucide-react';
 import { PipelineStage, type ScenePreset, type LayerVisibility, type PipelineOptions } from '../types';
 import { MapLayerControl } from './MapLayerControl';
@@ -34,6 +34,7 @@ interface MoonWorkbenchOverlayProps {
   onBackToLanding: () => void;
   onOpenTargetPalette: () => void;
   onOpenEngineInspector: () => void;
+  onOpenAddFiles?: () => void;
   pipelineStage: PipelineStage;
   onRunPipeline: () => void;
   telemetryRmse?: number;
@@ -42,6 +43,7 @@ interface MoonWorkbenchOverlayProps {
   probedTarget?: ProbedLocation | null;
   onCloseProbeTarget?: () => void;
   onInspectProbedTargetIn2D?: () => void;
+  isBackendOnline?: boolean;
 }
 
 export const MoonWorkbenchOverlay: React.FC<MoonWorkbenchOverlayProps> = ({
@@ -58,50 +60,66 @@ export const MoonWorkbenchOverlay: React.FC<MoonWorkbenchOverlayProps> = ({
   onBackToLanding,
   onOpenTargetPalette,
   onOpenEngineInspector,
+  onOpenAddFiles,
   pipelineStage,
   onRunPipeline,
-  telemetryRmse = 0.01,
+  telemetryRmse = 0.34,
   isOrbitTourActive = false,
   onToggleOrbitTour,
-  probedTarget,
-  onCloseProbeTarget,
-  onInspectProbedTargetIn2D,
+  isBackendOnline = false,
 }) => {
   const isRunning = pipelineStage !== PipelineStage.Idle && pipelineStage !== PipelineStage.Done;
   const isDone = pipelineStage === PipelineStage.Done;
 
   return (
     <div className="absolute inset-0 w-full h-full pointer-events-none overflow-hidden select-none font-sans z-20">
-      {/* ── 1. TOP-LEFT: BRAND & CRATER SELECTOR (THE ONLY TARGET TRIGGER) ── */}
-      <div className="absolute top-4 left-4 sm:top-5 sm:left-5 pointer-events-auto flex items-center gap-2.5 bg-black/60 hover:bg-black/80 backdrop-blur-xl border border-white/15 px-4 py-2 rounded-full shadow-[0_8px_32px_rgba(0,0,0,0.6)] transition-all">
-        {/* Brand: Voyage (Click goes to Home) */}
-        <button
-          onClick={onBackToLanding}
-          className="flex items-center gap-2 group cursor-pointer focus:outline-none"
-          title="Return to Home Overview"
-        >
-          <span className="font-logo text-base sm:text-lg font-extrabold tracking-[0.08em] text-white group-hover:text-[#2997FF] transition-colors">
-            Voyage
-          </span>
-          <div className="w-4 h-4 rounded-full bg-gradient-to-tr from-[#0F1117] via-slate-300 to-white shadow-[0_0_8px_rgba(255,255,255,0.35)] relative overflow-hidden flex items-center justify-center shrink-0 border border-white/30">
-            <div className="absolute inset-0 bg-black/75 rounded-full translate-x-1 -translate-y-0.5" />
-          </div>
-        </button>
+      {/* ── 1. TOP-LEFT: BRAND & CRATER SELECTOR + ADD FILES (BESIDE) ── */}
+      <div className="absolute top-4 left-4 sm:top-5 sm:left-5 pointer-events-auto flex items-center gap-2">
+        <div className="flex items-center gap-2 sm:gap-2.5 bg-black/60 hover:bg-black/80 backdrop-blur-xl border border-white/15 px-3.5 py-1.5 sm:px-4 sm:py-2 rounded-full shadow-[0_8px_32px_rgba(0,0,0,0.6)] transition-all">
+          {/* Brand: Voyage (Click goes to Home) */}
+          <button
+            onClick={onBackToLanding}
+            className="flex items-center gap-2 group cursor-pointer focus:outline-none"
+            title="Return to Home Overview"
+          >
+            <span className="font-logo text-base sm:text-lg font-extrabold tracking-[0.08em] text-white group-hover:text-[#2997FF] transition-colors">
+              Voyage
+            </span>
+            <div className="w-4 h-4 rounded-full bg-gradient-to-tr from-[#0F1117] via-slate-300 to-white shadow-[0_0_8px_rgba(255,255,255,0.35)] relative overflow-hidden flex items-center justify-center shrink-0 border border-white/30">
+              <div className="absolute inset-0 bg-black/75 rounded-full translate-x-1 -translate-y-0.5" />
+            </div>
+          </button>
 
-        <div className="w-px h-4 bg-white/20" />
+          <div className="w-px h-4 bg-white/20" />
 
-        {/* Current Crater Selector (Opens Target Palette) */}
-        <button
-          onClick={onOpenTargetPalette}
-          className="flex items-center gap-2 text-white/80 hover:text-white transition-colors cursor-pointer group"
-          title="Open Lunar Target Palette"
-        >
-          <span className="w-2 h-2 rounded-full bg-[#2997FF] shadow-[0_0_8px_rgba(41,151,255,0.8)]" />
-          <span className="text-xs font-semibold max-w-[150px] sm:max-w-none truncate">
-            {selectedScene.name}
-          </span>
-          <ChevronDown size={13} className="text-white/40 group-hover:text-white transition-transform group-hover:translate-y-0.5" />
-        </button>
+          {/* Current Crater Selector (Opens Target Palette) */}
+          <button
+            onClick={onOpenTargetPalette}
+            className="flex items-center gap-2 text-white/80 hover:text-white transition-colors cursor-pointer group"
+            title="Open Lunar Target Palette"
+          >
+            <span className="w-2 h-2 rounded-full bg-[#2997FF] shadow-[0_0_8px_rgba(41,151,255,0.8)]" />
+            <span className="text-xs font-semibold max-w-[105px] sm:max-w-[160px] md:max-w-none truncate">
+              {selectedScene.name}
+            </span>
+            <ChevronDown size={13} className="text-white/40 group-hover:text-white transition-transform group-hover:translate-y-0.5" />
+          </button>
+
+          {/* Add Files Button (Right beside crater selector) */}
+          {onOpenAddFiles && (
+            <>
+              <div className="w-px h-4 bg-white/20" />
+              <button
+                onClick={onOpenAddFiles}
+                className="flex items-center gap-1.5 text-white/75 hover:text-white transition-all cursor-pointer group active:scale-95 text-xs font-semibold"
+                title="Add Lunar Mission Imagery / PDS-4 Files"
+              >
+                <Upload size={12} className="text-[#2997FF] group-hover:scale-110 transition-transform" />
+                <span>Add Files</span>
+              </button>
+            </>
+          )}
+        </div>
       </div>
 
       {/* ── 2. TOP-RIGHT: WORKBENCH MODE SWITCHER & ENGINE INSPECTOR ── */}
@@ -178,73 +196,7 @@ export const MoonWorkbenchOverlay: React.FC<MoonWorkbenchOverlayProps> = ({
         </div>
       )}
 
-      {/* ── 2C. INTERACTIVE SURFACE TELEMETRY PROBE CARD ── */}
-      {activeTab === '3d' && probedTarget && (
-        <div className="absolute top-20 left-4 sm:left-6 z-30 pointer-events-auto max-w-sm w-full bg-[#0A0C11]/90 backdrop-blur-2xl border border-white/20 rounded-3xl p-4 shadow-[0_24px_80px_rgba(0,0,0,0.9)] animate-in fade-in slide-in-from-top-3 duration-200">
-          <div className="flex items-start justify-between pb-2.5 border-b border-white/10">
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-[#00f0ff] shadow-[0_0_8px_#00f0ff] animate-ping" />
-                <span className="text-[10px] uppercase font-bold tracking-wider text-[#00f0ff]">
-                  Surface Coordinate Probe
-                </span>
-              </div>
-              <h3 className="text-sm font-bold text-white mt-1">{probedTarget.name}</h3>
-              <p className="text-[11px] text-white/50">{probedTarget.region}</p>
-            </div>
-            <button
-              onClick={onCloseProbeTarget}
-              className="p-1 rounded-full text-white/40 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
-            >
-              <X size={14} />
-            </button>
-          </div>
 
-          <div className="grid grid-cols-2 gap-2 my-3">
-            <div className="p-2 rounded-xl bg-white/[0.03] border border-white/5">
-              <span className="text-[9px] uppercase text-white/40 block">Coordinates</span>
-              <span className="text-xs font-mono font-bold text-white">
-                {Math.abs(probedTarget.lat).toFixed(2)}°{probedTarget.lat < 0 ? 'S' : 'N'}, {Math.abs(probedTarget.lon).toFixed(2)}°{probedTarget.lon < 0 ? 'W' : 'E'}
-              </span>
-            </div>
-            <div className="p-2 rounded-xl bg-white/[0.03] border border-white/5">
-              <span className="text-[9px] uppercase text-white/40 block">LOLA Elevation</span>
-              <span className="text-xs font-mono font-bold text-white">
-                {probedTarget.elevationM > 0 ? `+${probedTarget.elevationM}` : probedTarget.elevationM} m
-              </span>
-            </div>
-            <div className="p-2 rounded-xl bg-white/[0.03] border border-white/5">
-              <span className="text-[9px] uppercase text-white/40 block">Illumination / Temp</span>
-              <span className="text-xs font-mono font-bold text-amber-300">
-                {probedTarget.solarIncidence.toFixed(1)}° · {probedTarget.temperatureK} K
-              </span>
-            </div>
-            <div className="p-2 rounded-xl bg-white/[0.03] border border-white/5">
-              <span className="text-[9px] uppercase text-white/40 block">Volatiles / Ice</span>
-              <span className="text-xs font-mono font-bold text-cyan-300">
-                {probedTarget.waterIceWtPct.toFixed(1)} wt%
-              </span>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 pt-1">
-            <button
-              onClick={onInspectProbedTargetIn2D}
-              className="flex-1 py-2 rounded-xl bg-[#0071E3] hover:bg-[#0077ED] text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-md active:scale-95"
-            >
-              <GitCommit size={13} />
-              <span>Align in 2D View</span>
-            </button>
-            <button
-              onClick={onRunPipeline}
-              className="py-2 px-3 rounded-xl bg-white/10 hover:bg-white/20 text-white font-semibold text-xs flex items-center justify-center gap-1 transition-all cursor-pointer"
-              title="Run Co-Registration on this target"
-            >
-              <Play size={12} className="fill-current" />
-            </button>
-          </div>
-        </div>
-      )}
 
       {/* ── 3. BOTTOM-CENTER: PRIMARY ACTION BAR ONLY (ZERO REDUNDANT BUTTONS) ── */}
       <div className="absolute bottom-5 left-1/2 -translate-x-1/2 pointer-events-auto flex items-center gap-2.5 bg-black/75 hover:bg-black/85 backdrop-blur-2xl border border-white/15 p-1.5 sm:p-2 rounded-full shadow-[0_12px_40px_rgba(0,0,0,0.8)] transition-all">
@@ -265,15 +217,16 @@ export const MoonWorkbenchOverlay: React.FC<MoonWorkbenchOverlayProps> = ({
           ) : (
             <Play size={13} className={isRunning ? 'animate-spin' : 'fill-current'} />
           )}
-          <span>{isDone ? 'Registered (0.010 px)' : isRunning ? 'Aligning...' : 'Run Co-Registration'}</span>
+          <span>{isDone ? `Registered (${telemetryRmse.toFixed(3)} px)` : isRunning ? 'Aligning...' : 'Run Co-Registration'}</span>
         </button>
 
         <div className="w-px h-4 bg-white/20 mx-0.5" />
 
         {/* Live Telemetry Readout */}
         <div className="px-3 py-1 text-xs text-white/60 font-mono flex items-center gap-1.5">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+          <span className={`w-1.5 h-1.5 rounded-full ${isBackendOnline ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)]' : 'bg-amber-400'}`} />
           <span>RMSE: <strong className="text-white">{telemetryRmse.toFixed(3)} px</strong></span>
+          <span className="text-[10px] text-white/40 ml-1">({isBackendOnline ? 'LIVE' : 'CACHE'})</span>
         </div>
       </div>
 

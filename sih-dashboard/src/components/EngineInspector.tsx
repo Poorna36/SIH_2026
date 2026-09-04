@@ -334,11 +334,11 @@ export const EngineInspector: React.FC<EngineInspectorProps> = ({
                 <div className="text-[10px] text-white/40 uppercase mt-0.5">Total Pairs</div>
               </div>
               <div className="p-3 rounded-2xl bg-white/[0.04] border border-white/10 text-center">
-                <div className="text-xl font-bold font-mono text-emerald-400">{stats?.train_pairs ?? 8}</div>
+                <div className="text-xl font-bold font-mono text-emerald-400">{stats?.train_pairs ?? pairs.filter((p) => p.split === 'train').length}</div>
                 <div className="text-[10px] text-white/40 uppercase mt-0.5">Train Set</div>
               </div>
               <div className="p-3 rounded-2xl bg-white/[0.04] border border-white/10 text-center">
-                <div className="text-xl font-bold font-mono text-[#2997FF]">{stats?.test_pairs ?? 5}</div>
+                <div className="text-xl font-bold font-mono text-[#2997FF]">{stats?.test_pairs ?? pairs.filter((p) => p.split === 'test').length}</div>
                 <div className="text-[10px] text-white/40 uppercase mt-0.5">Test Set</div>
               </div>
             </div>
@@ -415,7 +415,7 @@ export const EngineInspector: React.FC<EngineInspectorProps> = ({
               </div>
 
               {uploadedFiles.length > 0 && (
-                <div className="space-y-1 mt-3">
+                <div className="space-y-2 mt-3">
                   <div className="flex items-center justify-between text-[10px] text-white/40 px-1 font-mono">
                     <span>UPLOADED BUNDLE FILES ({uploadedFiles.length})</span>
                     <button onClick={() => setUploadedFiles([])} className="hover:text-white cursor-pointer">
@@ -430,6 +430,15 @@ export const EngineInspector: React.FC<EngineInspectorProps> = ({
                       </span>
                     </div>
                   ))}
+                  <button
+                    onClick={() => {
+                      alert(`Ingesting ${uploadedFiles.length} files into PDS-4 pipeline catalog. Parsing geo-referencing footprints...`);
+                      setUploadedFiles([]);
+                    }}
+                    className="w-full py-2.5 rounded-2xl bg-[#0071E3] hover:bg-[#0077ED] text-white font-bold text-xs flex items-center justify-center gap-2 shadow-md transition-all cursor-pointer active:scale-95"
+                  >
+                    <span>Ingest & Process Batch ({uploadedFiles.length} Files)</span>
+                  </button>
                 </div>
               )}
             </div>

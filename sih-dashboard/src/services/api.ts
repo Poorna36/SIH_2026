@@ -312,6 +312,7 @@ export interface BackendTelemetryDiagnostic {
   matcher_winner: string;
   runtime_s: number;
   ladder_level: number;
+  utc?: string;
 }
 
 /** Get authentic co-registration telemetry */
@@ -324,3 +325,33 @@ export async function getCraterCatalog(query?: string): Promise<BackendCraterDet
   const url = query && query.trim() ? `/api/science/craters/?q=${encodeURIComponent(query.trim())}` : '/api/science/craters/';
   return apiFetch<BackendCraterDetail[]>(url);
 }
+
+/** Upload user-provided mission imagery files */
+export async function uploadMissionFiles(
+  files: File[],
+  pairName?: string,
+  sensor?: string
+): Promise<{ status: string; pair_id: string; name: string; message: string; pair?: any } | null> {
+  try {
+    const formData = new FormData();
+    files.forEach((file) => {
+      formData.append('files', file);
+    });
+    if (pairName) formData.append('pair_name', pairName);
+    if (sensor) formData.append('sensor', sensor);
+
+    const res = await fetch(`${API_BASE}/api/datasets/upload`, {
+      method: 'POST',
+      body: formData,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Upload failed' }));
+      throw new Error(err.detail || 'Upload failed');
+    }
+    return await res.json();
+  } catch (error) {
+    console.error('Failed to upload mission files:', error);
+    return null;
+  }
+}
+

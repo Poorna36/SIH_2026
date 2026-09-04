@@ -13,6 +13,8 @@ interface ResultsViewProps {
   spectralData: SpectralData;
   selectedScene: ScenePreset;
   onNavigateToTab?: (tab: '3d' | '2d') => void;
+  isBackendOnline?: boolean;
+  isLoading?: boolean;
 }
 
 export const ResultsView: React.FC<ResultsViewProps> = ({
@@ -20,7 +22,61 @@ export const ResultsView: React.FC<ResultsViewProps> = ({
   slz,
   spectralData,
   selectedScene,
+  isBackendOnline = false,
+  isLoading = false,
 }) => {
+  const handleExportReport = () => {
+    const reportData = {
+      mission: 'ISRO Chandrayaan-2 Co-Registration Workbench',
+      problem_statement: 'SIH26166 Autonomous Precision Engine',
+      target: selectedScene.name,
+      target_id: selectedScene.id,
+      generated_at: new Date().toISOString(),
+      selenographic_coordinates: {
+        latitude: selectedScene.lat,
+        longitude: selectedScene.lon,
+        terrain_class: selectedScene.terrainClass,
+        solar_incidence_deg: selectedScene.solarIncidenceDeg,
+      },
+      telemetry: {
+        rmse_px: telemetry.rmsePx,
+        ssim: telemetry.ssim,
+        inlier_count: telemetry.inlierCount,
+        inlier_ratio: telemetry.inlierRatio,
+        spatial_coverage: telemetry.spatialCoverage,
+        matcher_winner: telemetry.matcherWinner,
+        runtime_seconds: telemetry.runtimeS,
+      },
+      safe_landing_zone: {
+        overall_safety_score: slz.overallSafetyScore,
+        decision: slz.goNoGo,
+        measured_slope_deg: slz.slopeDeg,
+        slope_threshold_deg: slz.slopeThresholdDeg,
+        slope_pass_rate: slz.slopePassRate,
+        boulder_clearance_m: slz.boulderClearanceM,
+        boulder_pass_rate: slz.boulderPassRate,
+      },
+      hyperspectral_analysis: {
+        sensor: spectralData.sensor,
+        band: spectralData.band,
+        absorption_trough_wavelength_um: spectralData.absorptionTroughWavelength,
+        water_ice_absorption_depth: spectralData.absorptionDepth,
+        spectral_curve: spectralData.data,
+      },
+      backend_status: isBackendOnline ? 'AUTHENTIC_LIVE_FASTAPI' : 'OFFLINE_CACHE',
+    };
+
+    const blob = new Blob([JSON.stringify(reportData, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `chandrayaan2_pds4_report_${selectedScene.id}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="w-full h-full overflow-y-auto sidebar-scroll p-6 md:p-10 space-y-8 bg-transparent text-white font-sans max-w-7xl mx-auto">
       {/* ── TOP EDITORIAL HEADER ── */}
@@ -31,10 +87,17 @@ export const ResultsView: React.FC<ResultsViewProps> = ({
             <span className="text-xs font-bold text-[#2997FF] tracking-widest uppercase">
               Science & Accuracy Diagnostics
             </span>
-            <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-[11px] font-semibold text-emerald-300 flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)]" />
-              <span>FastAPI Backend Synced</span>
-            </span>
+            {isBackendOnline ? (
+              <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-[11px] font-semibold text-emerald-300 flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)] animate-pulse" />
+                <span>FastAPI Backend Synced {isLoading ? '(Calibrating...)' : ''}</span>
+              </span>
+            ) : (
+              <span className="px-2.5 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-[11px] font-semibold text-amber-300 flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                <span>Offline Fallback Data</span>
+              </span>
+            )}
           </div>
           <h1 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold tracking-tight text-white font-headline leading-tight">
             {selectedScene.name}
@@ -52,10 +115,10 @@ export const ResultsView: React.FC<ResultsViewProps> = ({
 
         <div className="flex items-center gap-2 shrink-0">
           <button
-            onClick={() => alert(`Exporting calibrated PDS-4 diagnostic report for ${selectedScene.name} (RMSE: ${telemetry.rmsePx.toFixed(3)} px, Inliers: ${telemetry.inlierCount})...`)}
+            onClick={handleExportReport}
             className="flex items-center gap-1.5 px-4 py-2 rounded-full bg-white/10 hover:bg-white/20 text-white font-semibold text-xs border border-white/15 transition-all cursor-pointer active:scale-95 shadow-sm"
           >
-            <span>Export Report</span>
+            <span>Export PDS-4 Report</span>
           </button>
         </div>
       </div>
@@ -192,8 +255,14 @@ export const ResultsView: React.FC<ResultsViewProps> = ({
               <h2 className="text-lg font-bold text-white tracking-tight">
                 Landing Zone Safety Criteria
               </h2>
-              <span className="text-xs font-bold px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                GO VERIFIED
+              <span className={`text-xs font-bold px-3 py-1 rounded-full border ${
+                slz.goNoGo === 'GO'
+                  ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+                  : slz.goNoGo === 'MARGINAL'
+                  ? 'bg-amber-500/20 text-amber-400 border-amber-500/30'
+                  : 'bg-rose-500/20 text-rose-400 border-rose-500/30'
+              }`}>
+                {slz.goNoGo === 'GO' ? 'GO VERIFIED' : slz.goNoGo === 'MARGINAL' ? 'MARGINAL' : 'NO-GO'}
               </span>
             </div>
             <p className="text-xs text-white/50 mt-1 leading-relaxed">
@@ -226,10 +295,17 @@ export const ResultsView: React.FC<ResultsViewProps> = ({
               <span className="font-mono text-base font-bold text-cyan-400">{slz.boulderClearanceM} m (Safe)</span>
             </div>
 
-            <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center gap-2.5 text-xs text-emerald-300">
-              <CheckCircle2 size={16} className="shrink-0 text-emerald-400" />
-              <span>Complies with all international lunar polar exploration terrain safety standards.</span>
-            </div>
+            {slz.goNoGo === 'GO' ? (
+              <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center gap-2.5 text-xs text-emerald-300">
+                <CheckCircle2 size={16} className="shrink-0 text-emerald-400" />
+                <span>Complies with all international lunar polar exploration terrain safety standards.</span>
+              </div>
+            ) : (
+              <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center gap-2.5 text-xs text-amber-300">
+                <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0" />
+                <span>Marginal slope or boulder clearance detected. Secondary descent trajectory recommended.</span>
+              </div>
+            )}
           </div>
         </div>
       </div>

@@ -5,6 +5,7 @@ import { LunarTargetPalette } from './components/LunarTargetPalette';
 import { EngineInspector } from './components/EngineInspector';
 import { KeypointViewer } from './components/KeypointViewer';
 import { ResultsView } from './components/ResultsView';
+import { AddFilesModal } from './components/AddFilesModal';
 import { WebGlMoonViewer } from './components/landing/WebGlMoonViewer';
 import { useBackendData } from './hooks/useBackendData';
 import { getSlzData, getSpectralData, getTelemetryData } from './services/api';
@@ -126,6 +127,7 @@ export function App() {
   const [pipelineStage, setPipelineStage] = useState<PipelineStage>(PipelineStage.Idle);
   const [isTargetPaletteOpen, setIsTargetPaletteOpen] = useState(false);
   const [isEngineInspectorOpen, setIsEngineInspectorOpen] = useState(false);
+  const [isAddFilesOpen, setIsAddFilesOpen] = useState(false);
   const [cameraZoom, setCameraZoom] = useState<number>(3.8);
 
   const [isOrbitTourActive, setIsOrbitTourActive] = useState(false);
@@ -148,15 +150,19 @@ export function App() {
       });
     } else {
       const isPolar = Math.abs(lat) > 70;
+      const solarInc = Math.round(Math.min(88, Math.max(30, Math.abs(lat) + 4)));
+      const tempK = isPolar
+        ? Math.round(40 + (90 - Math.abs(lat)) * 5.5)
+        : Math.round(230 + Math.cos((lat * Math.PI) / 180) * 135);
       setProbedTarget({
         lat,
         lon,
         name: `Selenographic Point (${lat > 0 ? '+' : ''}${lat}°, ${lon > 0 ? '+' : ''}${lon}°)`,
         region: isPolar ? 'South Polar Highland Corridor' : 'Equatorial Regolith Terrain',
         elevationM: Math.round(-1800 + Math.sin(lat * 0.1) * 2200),
-        solarIncidence: Math.round(Math.min(88, Math.max(30, Math.abs(lat) + 4))),
-        temperatureK: Math.round(isPolar ? 85 + Math.random() * 40 : 340 + Math.random() * 45),
-        waterIceWtPct: isPolar ? 2.8 : 0.3,
+        solarIncidence: solarInc,
+        temperatureK: tempK,
+        waterIceWtPct: isPolar ? Math.min(8.5, Number((1.5 + (Math.abs(lat) - 70) * 0.3).toFixed(1))) : 0.3,
         psrStatus: isPolar ? 'Cryogenic Micro-cold Trap' : 'Sunlit Basaltic Regolith',
         craterId: undefined,
       });
@@ -216,69 +222,82 @@ export function App() {
   const [liveSlz, setLiveSlz] = useState<SLZDiagnostic | null>(null);
   const [liveSpectral, setLiveSpectral] = useState<SpectralData | null>(null);
   const [liveTelemetry, setLiveTelemetry] = useState<TelemetryData | null>(null);
+  const [isLoadingScience, setIsLoadingScience] = useState<boolean>(false);
 
   useEffect(() => {
     if (!isBackendOnline) {
       setLiveSlz(null);
       setLiveSpectral(null);
       setLiveTelemetry(null);
+      setIsLoadingScience(false);
       return;
     }
 
     let isMounted = true;
-    getSlzData(selectedScene.id).then((data) => {
-      if (isMounted && data) {
-        setLiveSlz({
-          slopeDeg: data.slope_deg,
-          slopeThresholdDeg: data.slope_threshold_deg,
-          slopePassRate: data.slope_pass_rate,
-          boulderClearanceM: data.boulder_clearance_m,
-          boulderThresholdM: data.boulder_threshold_m,
-          boulderPassRate: data.boulder_pass_rate,
-          overallSafetyScore: data.overall_safety_score,
-          goNoGo: data.go_no_go as any,
-          terrainRoughnessCm: data.terrain_roughness_cm,
-          craterDensityKm2: data.crater_density_km2,
-        });
-      }
-    });
+    setIsLoadingScience(true);
 
-    getSpectralData(selectedScene.id).then((data) => {
-      if (isMounted && data) {
-        setLiveSpectral({
-          pairId: data.pair_id,
-          sensor: data.sensor as any,
-          band: data.band,
-          probeCoord: data.probe_coord,
-          data: data.data,
-          absorptionTroughWavelength: data.absorption_trough_wavelength,
-          absorptionDepth: data.absorption_depth,
-        });
-      }
-    });
+    Promise.all([
+      getSlzData(selectedScene.id),
+      getSpectralData(selectedScene.id),
+      getTelemetryData(selectedScene.id),
+    ])
+      .then(([slzData, spectralData, telemetryData]) => {
+        if (!isMounted) return;
 
-    getTelemetryData(selectedScene.id).then((data) => {
-      if (isMounted && data) {
-        setLiveTelemetry({
-          rmsePx: data.rmse_px,
-          ssim: data.ssim,
-          inlierRatio: data.inlier_ratio,
-          inlierCount: data.inlier_count,
-          candidateCount: data.candidate_count,
-          spatialCoverage: data.spatial_coverage,
-          gridDensityStd: data.grid_density_std,
-          refinementGainPx: data.refinement_gain_px,
-          solarIncidenceDeg: data.solar_incidence_deg,
-          solarEmissionDeg: data.solar_emission_deg,
-          solarAzimuthDeg: data.solar_azimuth_deg,
-          matcherWinner: data.matcher_winner as any,
-          pairId: data.pair_id,
-          utc: '2023-08-23T12:34:00.000Z',
-          runtimeS: data.runtime_s,
-          ladderLevel: data.ladder_level,
-        });
-      }
-    });
+        if (slzData) {
+          setLiveSlz({
+            slopeDeg: slzData.slope_deg,
+            slopeThresholdDeg: slzData.slope_threshold_deg,
+            slopePassRate: slzData.slope_pass_rate,
+            boulderClearanceM: slzData.boulder_clearance_m,
+            boulderThresholdM: slzData.boulder_threshold_m,
+            boulderPassRate: slzData.boulder_pass_rate,
+            overallSafetyScore: slzData.overall_safety_score,
+            goNoGo: slzData.go_no_go as any,
+            terrainRoughnessCm: slzData.terrain_roughness_cm,
+            craterDensityKm2: slzData.crater_density_km2,
+          });
+        }
+
+        if (spectralData) {
+          setLiveSpectral({
+            pairId: spectralData.pair_id,
+            sensor: spectralData.sensor as any,
+            band: spectralData.band,
+            probeCoord: spectralData.probe_coord,
+            data: spectralData.data,
+            absorptionTroughWavelength: spectralData.absorption_trough_wavelength,
+            absorptionDepth: spectralData.absorption_depth,
+          });
+        }
+
+        if (telemetryData) {
+          setLiveTelemetry({
+            rmsePx: telemetryData.rmse_px,
+            ssim: telemetryData.ssim,
+            inlierRatio: telemetryData.inlier_ratio,
+            inlierCount: telemetryData.inlier_count,
+            candidateCount: telemetryData.candidate_count,
+            spatialCoverage: telemetryData.spatial_coverage,
+            gridDensityStd: telemetryData.grid_density_std,
+            refinementGainPx: telemetryData.refinement_gain_px,
+            solarIncidenceDeg: telemetryData.solar_incidence_deg,
+            solarEmissionDeg: telemetryData.solar_emission_deg,
+            solarAzimuthDeg: telemetryData.solar_azimuth_deg,
+            matcherWinner: telemetryData.matcher_winner as any,
+            pairId: telemetryData.pair_id,
+            utc: telemetryData.utc || new Date().toISOString(),
+            runtimeS: telemetryData.runtime_s,
+            ladderLevel: telemetryData.ladder_level,
+          });
+        }
+
+        setIsLoadingScience(false);
+      })
+      .catch((err) => {
+        console.warn('Failed to fetch authentic lunar science telemetry:', err);
+        if (isMounted) setIsLoadingScience(false);
+      });
 
     return () => {
       isMounted = false;
@@ -322,9 +341,9 @@ export function App() {
   const [layers, setLayers] = useState<LayerVisibility>({
     basemap: true,
     dem: false,
-    waterIce: true,
-    craters: true,
-    grid: true,
+    waterIce: false,
+    craters: false,
+    grid: false,
     ohrc: true,
     tmc2Slope: false,
     iirsHyperspectral: true,
@@ -351,9 +370,9 @@ export function App() {
     setPipelineStage(PipelineStage.Ingesting);
 
     if (isBackendOnline) {
-      setTimeout(() => setPipelineStage(PipelineStage.GraphMatching), 600);
-      setTimeout(() => setPipelineStage(PipelineStage.MAGSAC), 1200);
-      setTimeout(() => setPipelineStage(PipelineStage.Warping), 1800);
+      const t1 = setTimeout(() => setPipelineStage(PipelineStage.GraphMatching), 500);
+      const t2 = setTimeout(() => setPipelineStage(PipelineStage.MAGSAC), 1000);
+      const t3 = setTimeout(() => setPipelineStage(PipelineStage.Warping), 1500);
 
       try {
         await runPipelineOnPair({
@@ -369,7 +388,10 @@ export function App() {
       } catch (err) {
         console.warn('Backend run failed:', err);
       } finally {
-        setTimeout(() => setPipelineStage(PipelineStage.Done), 2400);
+        clearTimeout(t1);
+        clearTimeout(t2);
+        clearTimeout(t3);
+        setPipelineStage(PipelineStage.Done);
       }
     } else {
       setTimeout(() => setPipelineStage(PipelineStage.GraphMatching), 700);
@@ -420,6 +442,8 @@ export function App() {
                 slz={currentSlz}
                 spectralData={currentSpectral}
                 selectedScene={selectedScene}
+                isBackendOnline={isBackendOnline}
+                isLoading={isLoadingScience}
               />
             </div>
           )}
@@ -440,6 +464,7 @@ export function App() {
             onBackToLanding={handleBackToLanding}
             onOpenTargetPalette={() => setIsTargetPaletteOpen(true)}
             onOpenEngineInspector={() => setIsEngineInspectorOpen(true)}
+            onOpenAddFiles={() => setIsAddFilesOpen(true)}
             pipelineStage={pipelineStage}
             onRunPipeline={handleRunPipeline}
             telemetryRmse={activeTelemetry.rmsePx}
@@ -448,6 +473,7 @@ export function App() {
             probedTarget={probedTarget}
             onCloseProbeTarget={() => setProbedTarget(null)}
             onInspectProbedTargetIn2D={handleInspectProbedTargetIn2D}
+            isBackendOnline={isBackendOnline}
           />
 
           {/* Modern Aerospace Modal 1: Lunar Target Command Palette */}
@@ -490,7 +516,35 @@ export function App() {
                     height: foundCrater.height,
                     description: foundCrater.description,
                   });
+                } else {
+                  const foundPair = backendPairs.find((p) => p.pair_id === pairId);
+                  if (foundPair) {
+                    setSelectedScene({
+                      id: foundPair.pair_id,
+                      name: foundPair.pair_id.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase()),
+                      lat: foundPair.latitude_center_deg ?? -72.0,
+                      lon: foundPair.longitude_center_deg ?? 40.0,
+                      height: 80000,
+                      terrainClass: (foundPair.terrain_class as any) ?? 'highland',
+                      solarIncidenceDeg: foundPair.src.solar_incidence_deg ?? 65.0,
+                      solarAzimuthDeg: foundPair.src.solar_azimuth_deg ?? 180.0,
+                      gsdM: foundPair.src.gsd_m,
+                      description: `Multi-Sensor Pair: ${foundPair.src.sensor} (${foundPair.src.gsd_m}m) ➔ ${foundPair.ref.type}`,
+                    });
+                  }
                 }
+              }}
+            />
+          </div>
+
+          {/* Modern Aerospace Modal 3: Add Mission Imagery Ingestion */}
+          <div className="pointer-events-auto">
+            <AddFilesModal
+              isOpen={isAddFilesOpen}
+              onClose={() => setIsAddFilesOpen(false)}
+              onPairCreated={(newScene) => {
+                setSelectedScene(newScene);
+                setActiveCenterTab('2d');
               }}
             />
           </div>

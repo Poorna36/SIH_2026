@@ -238,57 +238,89 @@ export const KeypointViewer: React.FC<KeypointViewerProps> = ({
 
         const isHovered = hoveredMatch?.id === match.id;
 
-        // Animated hairline laser line drawing directly from (x1, y1) to (x2, y2)
+        // Animated laser line drawing directly from (x1, y1) to (x2, y2)
         if (lineProgress > 0) {
           const targetX = x1 + (x2 - x1) * lineProgress;
           const targetY = y1 + (y2 - y1) * lineProgress;
 
+          // 1. High-contrast dark outline / halo behind the line so it pops against both dark lunar shadows and bright crater ejecta
+          ctx.save();
+          ctx.beginPath();
+          ctx.moveTo(x1, y1);
+          ctx.lineTo(targetX, targetY);
+          ctx.strokeStyle = 'rgba(0, 0, 0, 0.9)';
+          ctx.lineWidth = isHovered ? 6.0 : 4.6;
+          ctx.setLineDash(match.isInlier ? [] : [12, 5]);
+          ctx.stroke();
+          ctx.restore();
+
+          // 2. Main high-visibility laser line with vivid neon glow
+          ctx.save();
           ctx.beginPath();
           ctx.moveTo(x1, y1);
           ctx.lineTo(targetX, targetY);
 
           if (match.isInlier) {
-            // High-contrast vibrant laser emerald green - refined hairline width
-            ctx.strokeStyle = isHovered ? '#FFFFFF' : 'rgba(0, 255, 102, 0.85)';
-            ctx.lineWidth = isHovered ? 1.6 : 0.9;
-            ctx.shadowColor = 'rgba(0, 255, 102, 0.5)';
-            ctx.shadowBlur = isHovered ? 4 : 1.5;
+            // High-contrast vibrant laser emerald green - crisp and vivid
+            ctx.strokeStyle = isHovered ? '#FFFFFF' : '#00FF88';
+            ctx.lineWidth = isHovered ? 3.4 : 2.4;
+            ctx.shadowColor = 'rgba(0, 255, 136, 0.95)';
+            ctx.shadowBlur = isHovered ? 10 : 5;
             ctx.setLineDash([]);
           } else {
-            // High-contrast neon laser crimson red - refined hairline dashed
-            ctx.strokeStyle = isHovered ? '#FFA0A0' : 'rgba(255, 46, 81, 0.75)';
-            ctx.lineWidth = isHovered ? 1.4 : 0.8;
-            ctx.shadowColor = 'rgba(255, 46, 81, 0.3)';
-            ctx.shadowBlur = isHovered ? 3 : 1;
-            ctx.setLineDash([4, 3]);
+            // Ultra-vivid electric laser crimson - bold, thick, and clearly visible against dark lunar terrain
+            ctx.strokeStyle = isHovered ? '#FFFFFF' : '#FF1E47';
+            ctx.lineWidth = isHovered ? 3.6 : 2.6;
+            ctx.shadowColor = 'rgba(255, 30, 71, 1.0)';
+            ctx.shadowBlur = isHovered ? 12 : 6;
+            ctx.setLineDash([12, 5]);
           }
           ctx.stroke();
+          ctx.restore();
         }
 
-        // Source keypoint dot (Refined micro dot, radius 2.2px)
-        const dotRadius = isHovered ? 3.5 : 2.2;
+        // Source keypoint dot (Prominent dot with dark contrast rim + crisp white border + neon core)
+        const dotRadius = isHovered ? 5.5 : 4.0;
+        ctx.save();
+        // Dark contrast base disc
+        ctx.beginPath();
+        ctx.arc(x1, y1, dotRadius + 1.2, 0, 2 * Math.PI);
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
+        ctx.fill();
+
+        // Vivid neon dot
         ctx.beginPath();
         ctx.arc(x1, y1, dotRadius, 0, 2 * Math.PI);
-        ctx.fillStyle = match.isInlier ? '#00FF66' : '#FF2E51';
-        ctx.shadowColor = match.isInlier ? 'rgba(0, 255, 102, 0.8)' : 'rgba(255, 46, 81, 0.8)';
-        ctx.shadowBlur = 2;
+        ctx.fillStyle = match.isInlier ? '#00FF88' : '#FF1E47';
+        ctx.shadowColor = match.isInlier ? 'rgba(0, 255, 136, 1.0)' : 'rgba(255, 30, 71, 1.0)';
+        ctx.shadowBlur = isHovered ? 8 : 4;
         ctx.fill();
         ctx.strokeStyle = '#FFFFFF';
-        ctx.lineWidth = 0.8;
+        ctx.lineWidth = 1.2;
         ctx.stroke();
+        ctx.restore();
 
         // Target keypoint dot on reference image (lights up as laser arrives)
         if (lineProgress > 0.8) {
           const arrivalFade = Math.min(1.0, (lineProgress - 0.8) / 0.2);
+          ctx.save();
+          // Dark contrast base disc
+          ctx.beginPath();
+          ctx.arc(x2, y2, (dotRadius + 1.2) * arrivalFade, 0, 2 * Math.PI);
+          ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
+          ctx.fill();
+
+          // Vivid neon dot
           ctx.beginPath();
           ctx.arc(x2, y2, dotRadius * arrivalFade, 0, 2 * Math.PI);
-          ctx.fillStyle = match.isInlier ? '#00FF66' : '#FF2E51';
-          ctx.shadowColor = match.isInlier ? 'rgba(0, 255, 102, 0.8)' : 'rgba(255, 46, 81, 0.8)';
-          ctx.shadowBlur = 2 * arrivalFade;
+          ctx.fillStyle = match.isInlier ? '#00FF88' : '#FF1E47';
+          ctx.shadowColor = match.isInlier ? 'rgba(0, 255, 136, 1.0)' : 'rgba(255, 30, 71, 1.0)';
+          ctx.shadowBlur = (isHovered ? 8 : 4) * arrivalFade;
           ctx.fill();
           ctx.strokeStyle = '#FFFFFF';
-          ctx.lineWidth = 0.8 * arrivalFade;
+          ctx.lineWidth = 1.2 * arrivalFade;
           ctx.stroke();
+          ctx.restore();
         }
       });
     } else if (viewMode === 'split') {
@@ -305,15 +337,25 @@ export const KeypointViewer: React.FC<KeypointViewerProps> = ({
         const x1 = Math.max(6, Math.min(width - 6, (match.srcXy[0] / coordBase) * width));
         const y1 = Math.max(6, Math.min(height - 6, (match.srcXy[1] / coordBase) * height));
 
+        const dotRadius = 3.6;
+        ctx.save();
+        // Dark contrast base disc
         ctx.beginPath();
-        ctx.arc(x1, y1, 2.4, 0, 2 * Math.PI);
-        ctx.fillStyle = match.isInlier ? '#00FF66' : '#FF2E51';
-        ctx.shadowColor = match.isInlier ? 'rgba(0, 255, 102, 0.8)' : 'rgba(255, 46, 81, 0.8)';
-        ctx.shadowBlur = 2;
+        ctx.arc(x1, y1, dotRadius + 1.0, 0, 2 * Math.PI);
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
+        ctx.fill();
+
+        // Vivid neon dot
+        ctx.beginPath();
+        ctx.arc(x1, y1, dotRadius, 0, 2 * Math.PI);
+        ctx.fillStyle = match.isInlier ? '#00FF88' : '#FF1E47';
+        ctx.shadowColor = match.isInlier ? 'rgba(0, 255, 136, 0.9)' : 'rgba(255, 30, 71, 0.9)';
+        ctx.shadowBlur = 4;
         ctx.fill();
         ctx.strokeStyle = '#FFFFFF';
-        ctx.lineWidth = 0.8;
+        ctx.lineWidth = 1.0;
         ctx.stroke();
+        ctx.restore();
       });
     }
   }, [viewMode, showInliers, showOutliers, hoveredMatch, keypointData, imageVersion, lineProgress]);
