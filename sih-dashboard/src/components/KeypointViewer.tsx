@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Eye, MoveHorizontal, Grid3X3, Activity, Sparkles } from 'lucide-react';
 import type { KeypointMatch } from '../types';
-import { getKeypointMatches } from '../services/api';
+import { getKeypointMatches, API_BASE } from '../services/api';
 import ohrcImg from '../assets/images/ohrc_orbital_fallback.jpg';
 import lroImg from '../assets/images/lro_reference_baseline_1788336850293.jpg';
 
@@ -134,8 +134,8 @@ export const KeypointViewer: React.FC<KeypointViewerProps> = ({
     }, 850);
   };
 
-  const liveSrcUrl = `http://localhost:8000/api/datasets/${encodeURIComponent(pairId)}/image/src?v=${imageVersion}`;
-  const liveRefUrl = `http://localhost:8000/api/datasets/${encodeURIComponent(pairId)}/image/ref?v=${imageVersion}`;
+  const liveSrcUrl = `${API_BASE}/api/datasets/${encodeURIComponent(pairId)}/image/src?v=${imageVersion}`;
+  const liveRefUrl = `${API_BASE}/api/datasets/${encodeURIComponent(pairId)}/image/ref?v=${imageVersion}`;
 
   const inlierCount = keypointData.filter((m) => m.isInlier).length;
   const outlierCount = keypointData.filter((m) => !m.isInlier).length;

@@ -49,16 +49,27 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
-# ── CORS Middleware (allow frontend dev servers) ──
+# ── CORS Middleware (allow frontend dev servers & Railway deployments) ──
+import os
+
+cors_origins_env = os.environ.get("CORS_ORIGINS", "")
+allowed_origins = [
+    "http://localhost:5173",   # sih-dashboard (Vite dev)
+    "http://127.0.0.1:5173",
+    "http://localhost:4173",   # sih-dashboard (Vite preview)
+    "http://127.0.0.1:4173",
+    "http://localhost:3000",   # fallback dev port
+]
+if cors_origins_env:
+    for orig in cors_origins_env.split(","):
+        o = orig.strip()
+        if o and o not in allowed_origins:
+            allowed_origins.append(o)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",   # sih-dashboard (Vite)
-        "http://127.0.0.1:5173",
-        "http://localhost:4173",   # sih-dashboard (Vite preview)
-        "http://127.0.0.1:4173",
-        "http://localhost:3000",   # fallback dev port
-    ],
+    allow_origins=allowed_origins,
+    allow_origin_regex=r"^https?://.*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -85,7 +96,14 @@ async def health_check():
 
 @app.get("/")
 async def root():
-    """Root redirect to API docs."""
+    """Root redirect to API docs or dashboard."""
+    frontend_dist = PROJECT_ROOT / "sih-dashboard" / "dist"
+    if not frontend_dist.exists():
+        frontend_dist = PROJECT_ROOT / "static"
+    if frontend_dist.exists() and (frontend_dist / "index.html").exists():
+        from fastapi.responses import FileResponse
+        return FileResponse(frontend_dist / "index.html")
+
     return {
         "message": "SIH26166 Lunar Correspondence Pipeline API",
         "docs": "/docs",
@@ -106,13 +124,38 @@ async def root():
     }
 
 
+# ── Static File / SPA Fallback Serving ──
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+
+frontend_dist = PROJECT_ROOT / "sih-dashboard" / "dist"
+if not frontend_dist.exists():
+    frontend_dist = PROJECT_ROOT / "static"
+
+if frontend_dist.exists() and (frontend_dist / "index.html").exists():
+    assets_dir = frontend_dist / "assets"
+    if assets_dir.exists():
+        app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="static_assets")
+
+    @app.get("/{full_path:path}")
+    async def serve_spa(full_path: str):
+        if full_path.startswith(("api/", "docs", "redoc", "openapi.json")):
+            from fastapi import HTTPException
+            raise HTTPException(status_code=404, detail="Not Found")
+        file_path = frontend_dist / full_path
+        if full_path and file_path.is_file():
+            return FileResponse(file_path)
+        return FileResponse(frontend_dist / "index.html")
+
+
 # ── Direct execution ──
 if __name__ == "__main__":
     import uvicorn
+    port = int(os.environ.get("PORT", 8000))
     uvicorn.run(
         "api.server:app",
         host="0.0.0.0",
-        port=8000,
-        reload=True,
+        port=port,
+        reload=False,
         log_level="info",
     )

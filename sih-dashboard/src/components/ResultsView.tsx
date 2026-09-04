@@ -8,6 +8,7 @@ import {
   MapPin, Table, FileText, Package, Check, Loader2
 } from 'lucide-react';
 import type { TelemetryData, SLZDiagnostic, SpectralData, ScenePreset } from '../types';
+import { API_BASE } from '../services/api';
 
 interface ResultsViewProps {
   telemetry: TelemetryData;
@@ -33,7 +34,6 @@ export const ResultsView: React.FC<ResultsViewProps> = ({
   const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
   const [downloadSuccessToast, setDownloadSuccessToast] = useState<string | null>(null);
 
-  const API_BASE = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000').replace(/\/$/, '');
   const srcImageUrl = `${API_BASE}/api/datasets/${encodeURIComponent(selectedScene.id)}/image/src`;
   const refImageUrl = `${API_BASE}/api/datasets/${encodeURIComponent(selectedScene.id)}/image/ref`;
 

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Search, X, ChevronLeft, ChevronRight, Compass } from 'lucide-react';
 import type { ScenePreset, CraterDetail } from '../types';
-import { getCraterCatalog } from '../services/api';
+import { getCraterCatalog, API_BASE } from '../services/api';
 import ohrcThumb from '../assets/images/ohrc_orbital_fallback.jpg';
 import iirsThumb from '../assets/images/iirs_hyperspectral_overlay_1788336834453.jpg';
 import tmc2Thumb from '../assets/images/tmc2_terrain_context_1788336820221.jpg';
@@ -48,7 +48,7 @@ export const LunarTargetPalette: React.FC<LunarTargetPaletteProps> = ({
     solarIncidenceDeg: c.solarIncidenceDeg ?? c.solar_incidence_deg ?? 65,
     floorSlopeDeg: c.floorInclinationDeg ?? c.floor_inclination_deg ?? 4.5,
     psrStatus: c.psrStatus ?? c.psr_status ?? 'Micro-cold traps',
-    thumbnail: `http://localhost:8000/api/datasets/${c.id}/image/src`,
+    thumbnail: `${API_BASE}/api/datasets/${c.id}/image/src`,
     fallbackThumbnail: FALLBACK_THUMBNAILS[c.id] || ohrcThumb,
   }));
 
