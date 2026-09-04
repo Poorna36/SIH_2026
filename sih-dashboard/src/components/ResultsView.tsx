@@ -30,17 +30,8 @@ export const ResultsView: React.FC<ResultsViewProps> = ({
 }) => {
   const [activeVisualMode, setActiveVisualMode] = useState<'overlay' | 'split' | 'difference'>('overlay');
   const [overlayOpacity, setOverlayOpacity] = useState<number>(0.5);
-
-  if (isLoading) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
-        <Loader2 className="w-10 h-10 text-cyan-400 animate-spin" />
-        <p className="text-xs font-mono tracking-widest text-white/60 uppercase">
-          Calculating Sub-Pixel Precision &amp; SLZ Hazard Vectors...
-        </p>
-      </div>
-    );
-  }
+  const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
+  const [downloadSuccessToast, setDownloadSuccessToast] = useState<string | null>(null);
 
   const API_BASE = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000').replace(/\/$/, '');
   const srcImageUrl = `${API_BASE}/api/datasets/${encodeURIComponent(selectedScene.id)}/image/src`;
@@ -135,9 +126,6 @@ export const ResultsView: React.FC<ResultsViewProps> = ({
   const hazardProb = slz.optimalLandingSite?.hazardProbability ?? (1.0 - slz.overallSafetyScore / 100);
 
   // ── Scientific Export Format Generators ──
-  const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
-  const [downloadSuccessToast, setDownloadSuccessToast] = useState<string | null>(null);
-
   const downloadFile = (content: string, filename: string, mimeType: string) => {
     const blob = new Blob([content], { type: mimeType });
     const url = URL.createObjectURL(blob);
@@ -687,6 +675,16 @@ Calibration Authority: Autonomous Lunar Mission Engineering Team
           )}
         </div>
       </div>
+
+      {/* Loading Indicator */}
+      {isLoading && (
+        <div className="flex items-center justify-center gap-3 p-3.5 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 animate-pulse">
+          <Loader2 className="w-4 h-4 animate-spin text-cyan-400" />
+          <span className="text-xs font-mono tracking-wider uppercase font-semibold">
+            Querying Live Planetary Backend &amp; Computing Verification Vectors...
+          </span>
+        </div>
+      )}
 
       {/* ── 2. HERO TELEMETRY STRIP (CORE PROBLEM STATEMENT METRICS) ── */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 p-5 rounded-3xl bg-white/[0.02] border border-white/10 shadow-2xl">
