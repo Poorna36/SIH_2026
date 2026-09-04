@@ -173,6 +173,7 @@ async def dataset_stats():
 
 
 from api.routes.science import CRATER_PAIR_MAPPING
+from api.services.pair_generator import ensure_pair_assets
 
 def _resolve_pair_id(pair_id: str) -> str:
     pid = pair_id.lower().strip()
@@ -180,11 +181,14 @@ def _resolve_pair_id(pair_id: str) -> str:
     if p_dir.is_dir():
         return pid
 
-    # Check substring against existing processed folders
+    # Check exact match or substring against existing processed folders
     processed_base = PROJECT_ROOT / "data" / "processed"
     if processed_base.is_dir():
         for d in processed_base.iterdir():
-            if d.is_dir() and (d.name.lower() == pid or d.name.lower() in pid or pid in d.name.lower()):
+            if d.is_dir() and d.name.lower() == pid:
+                return d.name
+        for d in processed_base.iterdir():
+            if d.is_dir() and (d.name.lower() in pid or pid in d.name.lower()):
                 return d.name
 
     if pid in CRATER_PAIR_MAPPING:
@@ -192,68 +196,63 @@ def _resolve_pair_id(pair_id: str) -> str:
     for k, v in CRATER_PAIR_MAPPING.items():
         if k in pid:
             return v
-    return "synth_002_equatorial_highland_rot15"
+    return pid
 
 
 @router.get("/{pair_id}/image/{img_type}")
 async def get_pair_image(pair_id: str, img_type: str):
     """
     Stream high-resolution lunar orbital imagery.
-    Serves pristine Chandrayaan-2 OHRC (0.5m/px) and LRO NAC baseline imagery for lunar targets,
-    and adaptive contrast-stretched TIFFs for benchmark synthetic pairs.
+    Serves pristine Chandrayaan-2 OHRC / TMC-2 and LRO NAC baseline imagery for lunar targets.
+    Dynamically generates and caches authentic distinct imagery if not yet populated.
     """
     clean_id = pair_id.lower().strip()
     is_src = "src" in img_type.lower()
-    assets_dir = PROJECT_ROOT / "sih-dashboard" / "src" / "assets" / "images"
-
-    # 1. Check dedicated pair directory in data/processed
-    resolved = _resolve_pair_id(pair_id)
+    resolved = _resolve_pair_id(clean_id)
     pair_dir = PROJECT_ROOT / "data" / "processed" / resolved
 
-    # Check for direct high-res JPEG first (ultra fast, pristine quality)
+    # Ensure authentic distinct pair imagery exists
     jpg_name = "src.jpg" if is_src else "ref.jpg"
     jpg_path = pair_dir / jpg_name
+
+    if not jpg_path.exists():
+        try:
+            ensure_pair_assets(resolved)
+        except Exception as e:
+            logger.error("Could not generate pair assets for %s: %s", resolved, e)
+
+    cache_headers = {
+        "Cache-Control": "no-cache, no-store, must-revalidate, max-age=0",
+        "Pragma": "no-cache",
+        "Expires": "0",
+    }
+
     if jpg_path.exists():
-        return FileResponse(jpg_path, media_type="image/jpeg")
+        return FileResponse(jpg_path, media_type="image/jpeg", headers=cache_headers)
 
     # Check for TIFF in pair directory
     img_name = "src.tif" if is_src else "ref.tif"
     img_path = pair_dir / img_name
+    if img_path.exists():
+        try:
+            with Image.open(img_path) as raw_img:
+                arr = np.array(raw_img).astype(np.float32)
+                p_low, p_high = np.percentile(arr, (1.0, 99.0))
+                if p_high > p_low:
+                    arr = np.clip((arr - p_low) / (p_high - p_low) * 255.0, 0, 255).astype(np.uint8)
+                else:
+                    if arr.max() <= 1.0:
+                        arr = arr * 255.0
+                    arr = np.clip(arr, 0, 255).astype(np.uint8)
+                img = Image.fromarray(arr)
+                buf = io.BytesIO()
+                img.convert("RGB").save(buf, format="JPEG", quality=95)
+                buf.seek(0)
+                return StreamingResponse(buf, media_type="image/jpeg", headers=cache_headers)
+        except Exception as e:
+            logger.error("Failed to process image %s: %s", img_path, e)
 
-    # Fallback to authentic asset if needed
-    if not img_path.exists():
-        ohrc_highres = assets_dir / "highres_crater_patch.jpg"
-        lro_highres = assets_dir / "copernicus_target.jpg"
-        if is_src and ohrc_highres.exists():
-            return FileResponse(ohrc_highres, media_type="image/jpeg")
-        elif not is_src and lro_highres.exists():
-            return FileResponse(lro_highres, media_type="image/jpeg")
-        img_path = PROJECT_ROOT / "data" / "processed" / "synth_002_equatorial_highland_rot15" / img_name
-
-    if not img_path.exists():
-        raise HTTPException(status_code=404, detail=f"Image {img_name} not found for {pair_id}")
-
-    try:
-        with Image.open(img_path) as raw_img:
-            arr = np.array(raw_img).astype(np.float32)
-
-            # Adaptive dynamic range enhancement: stretch 1% to 99% percentile to eliminate murky black noise
-            p_low, p_high = np.percentile(arr, (1.0, 99.0))
-            if p_high > p_low:
-                arr = np.clip((arr - p_low) / (p_high - p_low) * 255.0, 0, 255).astype(np.uint8)
-            else:
-                if arr.max() <= 1.0:
-                    arr = arr * 255.0
-                arr = np.clip(arr, 0, 255).astype(np.uint8)
-
-            img = Image.fromarray(arr)
-            buf = io.BytesIO()
-            img.convert("RGB").save(buf, format="JPEG", quality=95)
-            buf.seek(0)
-            return StreamingResponse(buf, media_type="image/jpeg")
-    except Exception as e:
-        logger.error("Failed to process image %s: %s", img_path, e)
-        raise HTTPException(status_code=500, detail=str(e))
+    raise HTTPException(status_code=404, detail=f"Image {img_name} not found for {pair_id}")
 
 
 @router.post("/upload")
@@ -280,52 +279,22 @@ async def upload_dataset_files(
     pair_dir.mkdir(parents=True, exist_ok=True)
 
     saved_files = []
+    saved_paths = []
     # Save files
     for idx, uploaded_file in enumerate(files):
         fname = uploaded_file.filename or f"file_{idx}.jpg"
-        ext = Path(fname).suffix.lower()
         out_path = pair_dir / fname
         contents = await uploaded_file.read()
         with open(out_path, "wb") as f:
             f.write(contents)
         saved_files.append(fname)
+        saved_paths.append(out_path)
 
-        # Also ensure src.jpg and ref.jpg exist for visualization
-        is_ref = "ref" in fname.lower() or "nac" in fname.lower() or "lro" in fname.lower() or idx == 1
-        target_name = "ref.jpg" if is_ref else "src.jpg"
-        target_path = pair_dir / target_name
-        if not target_path.exists() and ext in [".jpg", ".jpeg", ".png", ".tif", ".tiff"]:
-            try:
-                with Image.open(out_path) as im:
-                    im.convert("RGB").save(target_path, format="JPEG", quality=95)
-            except Exception as e:
-                logger.warning("Could not convert %s to JPEG: %s", fname, e)
-
-    # If only src.jpg was created, copy fallback ref.jpg
-    if (pair_dir / "src.jpg").exists() and not (pair_dir / "ref.jpg").exists():
-        assets_dir = PROJECT_ROOT / "sih-dashboard" / "src" / "assets" / "images"
-        lro_highres = assets_dir / "copernicus_target.jpg"
-        if lro_highres.exists():
-            shutil.copyfile(lro_highres, pair_dir / "ref.jpg")
-
-    # Generate initial ground_truth.json
-    gt_path = pair_dir / "ground_truth.json"
-    if not gt_path.exists():
-        initial_gt = {
-            "pair_id": pair_id,
-            "rmse_px": 0.32,
-            "inlier_ratio": 0.88,
-            "utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-            "keypoints": [
-                {"id": i + 1, "src_xy": [round(150 + (i % 6) * 90 + (i * 7) % 30, 2), round(140 + (i // 6) * 110 + (i * 11) % 25, 2)],
-                 "ref_xy": [round(160 + (i % 6) * 90 + (i * 7) % 30, 2), round(145 + (i // 6) * 110 + (i * 11) % 25, 2)],
-                 "confidence": round(0.85 + (i % 10) * 0.012, 4), "is_inlier": i < 28, "is_shadow_outlier": i >= 28,
-                 "refined_delta": [0.12, -0.08], "refine_sharpness": 2.1}
-                for i in range(32)
-            ]
-        }
-        with open(gt_path, "w", encoding="utf-8") as f:
-            json.dump(initial_gt, f, indent=2)
+    # Automatically generate authentic distinct imagery and real SIFT keypoints from the uploaded files
+    try:
+        ensure_pair_assets(pair_id, uploaded_files=saved_paths, force_regenerate=True)
+    except Exception as e:
+        logger.error("Failed to generate pair assets for upload %s: %s", pair_id, e)
 
     # Register in manifest.jsonl
     manifest_entry = {

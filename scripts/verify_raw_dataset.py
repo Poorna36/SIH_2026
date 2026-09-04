@@ -16,9 +16,16 @@ from __future__ import annotations
 
 import hashlib
 import os
+import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+if sys.stdout.encoding != "utf-8":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
 
 
 def check_md5(file_path: Path) -> str:
@@ -142,10 +149,52 @@ def inspect_iirs_granules(root_dir: Path) -> List[Dict[str, Any]]:
     return results
 
 
+def inspect_tmc_granules(root_dir: Path) -> List[Dict[str, Any]]:
+    """Scan and list all TMC products in data/raw/tmc/."""
+    results = []
+    xml_files = list(root_dir.glob("**/*_d_img_*.xml"))
+    
+    for xml_path in xml_files:
+        try:
+            tree = ET.parse(xml_path)
+            root = tree.getroot()
+            ns = {
+                "pds": "http://pds.nasa.gov/pds4/pds/v1",
+                "isda": "https://isda.issdc.gov.in/pds4/isda/v1",
+            }
+            lid = root.findtext(".//pds:logical_identifier", default="", namespaces=ns)
+            t_start = root.findtext(".//pds:start_date_time", default="", namespaces=ns)
+            res = root.findtext(".//isda:pixel_resolution", default="", namespaces=ns)
+            incidence = root.findtext(".//isda:solar_incidence", default="", namespaces=ns)
+            orbit = root.findtext(".//isda:imaging_orbit_number", default="", namespaces=ns)
+
+            # Check if browse image exists
+            browse_pngs = list(xml_path.parents[3].glob("**/browse/**/*.png"))
+
+            results.append({
+                "type": "TMC",
+                "granule_id": xml_path.stem,
+                "xml_path": str(xml_path),
+                "orbit": orbit,
+                "t_start": t_start,
+                "resolution_m": float(res) if res else None,
+                "solar_incidence_deg": float(incidence) if incidence else None,
+                "browse_png": str(browse_pngs[0]) if browse_pngs else None,
+            })
+        except Exception as e:
+            results.append({
+                "type": "TMC",
+                "xml_path": str(xml_path),
+                "error": str(e),
+            })
+    return results
+
+
 def main() -> None:
     base_dir = Path(__file__).resolve().parent.parent
     raw_ohrc = base_dir / "data" / "raw" / "ohrc"
     raw_iirs = base_dir / "data" / "raw" / "iirs"
+    raw_tmc = base_dir / "data" / "raw" / "tmc"
     
     print("=" * 80)
     print("🌕 CHANDRAYAAN-2 DATASET VERIFICATION REPORT (Phase 0 Scaffold)")
@@ -167,6 +216,12 @@ def main() -> None:
         if res.get('bounds', {}).get('lat_range'):
             print(f"  Latitude Bounds:   {res['bounds']['lat_range'][0]:.4f}° to {res['bounds']['lat_range'][1]:.4f}°")
             print(f"  Longitude Bounds:  {res['bounds']['lon_range'][0]:.4f}° to {res['bounds']['lon_range'][1]:.4f}°")
+
+    tmc_results = inspect_tmc_granules(raw_tmc)
+    print(f"\n📦 TMC Granules Discovered: {len(tmc_results)}")
+    for t in tmc_results:
+        has_png = "✅ " + Path(t['browse_png']).name if t.get('browse_png') else "ℹ️ XML Metadata"
+        print(f"  - {t['granule_id']} (Res: {t.get('resolution_m')} m/px, Inc: {t.get('solar_incidence_deg')}°, Raster: {has_png})")
 
     iirs_results = inspect_iirs_granules(raw_iirs)
     print(f"\n📦 IIRS Hyperspectral Products Discovered: {len(iirs_results)}")

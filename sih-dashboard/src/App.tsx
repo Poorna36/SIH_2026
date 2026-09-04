@@ -431,7 +431,7 @@ export function App() {
           {/* Center 2D Registration & Findings View (Conditional overlay) */}
           {activeCenterTab === '2d' && (
             <div className="absolute inset-0 w-full h-full z-10 pt-20 pb-20 px-4 md:px-12 bg-black/85 backdrop-blur-2xl overflow-hidden pointer-events-auto">
-              <KeypointViewer pairId={selectedScene.id} rmsePx={activeTelemetry.rmsePx} />
+              <KeypointViewer key={selectedScene.id} pairId={selectedScene.id} rmsePx={activeTelemetry.rmsePx} />
             </div>
           )}
 

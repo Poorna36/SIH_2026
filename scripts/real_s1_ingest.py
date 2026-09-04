@@ -35,10 +35,11 @@ IIRS_XMLS = [
     _ROOT / "data/raw/iirs/ch2_iir_nri_20240427T1010597893_d_img_d18/data/raw/20240427/ch2_iir_nri_20240427T1010597893_d_img_d18.xml",
     _ROOT / "data/raw/iirs/ch2_iir_nri_20210620T2058297275_d_img_hw1/data/raw/20210620/ch2_iir_nri_20210620T2058297275_d_img_hw1.xml",
 ]
+TMC_XMLS = sorted(list((_ROOT / "data/raw/tmc").glob("**/*_d_img_*.xml")))
 
 
 def main() -> int:
-    xmls = [OHRC_XML] + IIRS_XMLS
+    xmls = [OHRC_XML] + IIRS_XMLS + TMC_XMLS
     records = []
     errors = []
     for xp in xmls:

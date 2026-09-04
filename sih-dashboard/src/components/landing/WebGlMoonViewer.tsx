@@ -850,7 +850,8 @@ export const WebGlMoonViewer: React.FC<WebGlMoonViewerProps> = ({
     let orbitAngle = 0;
     const orbitRadius = radius * 1.55; // 1.47 units
     const orbitInclination = Math.PI / 3.8;
-    const clock = new THREE.Clock();
+    const startTime = performance.now();
+    let lastTime = performance.now();
 
     const animate = () => {
       animId = requestAnimationFrame(animate);
@@ -858,7 +859,10 @@ export const WebGlMoonViewer: React.FC<WebGlMoonViewerProps> = ({
       // Do not waste GPU/CPU cycles when tab is inactive
       if (document.hidden) return;
 
-      const delta = Math.min(clock.getDelta(), 0.1);
+      const now = performance.now();
+      const delta = Math.min((now - lastTime) / 1000, 0.1);
+      lastTime = now;
+      const elapsedTime = (now - startTime) * 0.001;
       const currentMoonX = moonOffsetRef.current.x;
 
       if (craterPinsGroupRef.current) {
@@ -886,11 +890,11 @@ export const WebGlMoonViewer: React.FC<WebGlMoonViewerProps> = ({
 
       // Pulse 3D Targeting Reticle
       if (targetBeaconGroupRef.current && targetBeaconGroupRef.current.visible) {
-        const pulse = 1.0 + 0.22 * Math.sin(clock.getElapsedTime() * 4.5);
+        const pulse = 1.0 + 0.22 * Math.sin(elapsedTime * 4.5);
         targetOuterRing.scale.set(pulse, pulse, pulse);
-        (targetOuterRing.material as THREE.MeshBasicMaterial).opacity = 0.7 + 0.3 * Math.cos(clock.getElapsedTime() * 4.5);
+        (targetOuterRing.material as THREE.MeshBasicMaterial).opacity = 0.7 + 0.3 * Math.cos(elapsedTime * 4.5);
         targetInnerRing.scale.set(1.0 / pulse, 1.0 / pulse, 1.0 / pulse);
-        (laserPillar.material as THREE.MeshBasicMaterial).opacity = 0.5 + 0.3 * Math.sin(clock.getElapsedTime() * 3.0);
+        (laserPillar.material as THREE.MeshBasicMaterial).opacity = 0.5 + 0.3 * Math.sin(elapsedTime * 3.0);
       }
 
       (window as any).__moonCheck = {

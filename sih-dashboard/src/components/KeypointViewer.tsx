@@ -62,6 +62,7 @@ export const KeypointViewer: React.FC<KeypointViewerProps> = ({
   const isDragging = useRef<boolean>(false);
 
   const [imageVersion, setImageVersion] = useState<number>(0);
+  const [repaintTick, setRepaintTick] = useState<number>(0);
   const [isMerged, setIsMerged] = useState<boolean>(true);
   const [lineProgress, setLineProgress] = useState<number>(0);
   const animFrameRef = useRef<number | null>(null);
@@ -78,7 +79,6 @@ export const KeypointViewer: React.FC<KeypointViewerProps> = ({
 
     // Phase 2: Once panels settle into place (1800ms), smoothly animate lines drawing from left to right
     const timer2 = setTimeout(() => {
-      setImageVersion((v) => v + 1);
       let start: number | null = null;
       const duration = 1200; // 1.2s smooth laser draw across
 
@@ -134,8 +134,8 @@ export const KeypointViewer: React.FC<KeypointViewerProps> = ({
     }, 850);
   };
 
-  const liveSrcUrl = `http://localhost:8000/api/datasets/${pairId}/image/src`;
-  const liveRefUrl = `http://localhost:8000/api/datasets/${pairId}/image/ref`;
+  const liveSrcUrl = `http://localhost:8000/api/datasets/${encodeURIComponent(pairId)}/image/src?v=${imageVersion}`;
+  const liveRefUrl = `http://localhost:8000/api/datasets/${encodeURIComponent(pairId)}/image/ref?v=${imageVersion}`;
 
   const inlierCount = keypointData.filter((m) => m.isInlier).length;
   const outlierCount = keypointData.filter((m) => !m.isInlier).length;
@@ -328,7 +328,7 @@ export const KeypointViewer: React.FC<KeypointViewerProps> = ({
         1,
         ...keypointData.flatMap((k) => [k.srcXy[0], k.srcXy[1], k.refXy[0], k.refXy[1]])
       );
-      const coordBase = maxVal > 600 ? 800 : 512;
+      const coordBase = maxVal > 650 ? 800 : (maxVal > 520 ? 600 : 512);
 
       keypointData.forEach((match) => {
         if (match.isInlier && !showInliers) return;
@@ -358,7 +358,7 @@ export const KeypointViewer: React.FC<KeypointViewerProps> = ({
         ctx.restore();
       });
     }
-  }, [viewMode, showInliers, showOutliers, hoveredMatch, keypointData, imageVersion, lineProgress]);
+  }, [viewMode, showInliers, showOutliers, hoveredMatch, keypointData, repaintTick, lineProgress]);
 
   const handleContainerClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!containerRef.current || !onProbeCoord) return;
@@ -473,9 +473,10 @@ export const KeypointViewer: React.FC<KeypointViewerProps> = ({
               }}
             >
               <img
+                key={`${pairId}-src`}
                 ref={leftImgRef}
                 src={liveSrcUrl}
-                onLoad={() => setImageVersion((v) => v + 1)}
+                onLoad={() => setRepaintTick((t) => t + 1)}
                 onError={(e) => { (e.target as HTMLImageElement).src = ohrcImg; }}
                 alt="CH-2 OHRC Source"
                 className="w-full h-full object-cover"
@@ -498,9 +499,10 @@ export const KeypointViewer: React.FC<KeypointViewerProps> = ({
               }}
             >
               <img
+                key={`${pairId}-ref`}
                 ref={rightImgRef}
                 src={liveRefUrl}
-                onLoad={() => setImageVersion((v) => v + 1)}
+                onLoad={() => setRepaintTick((t) => t + 1)}
                 onError={(e) => { (e.target as HTMLImageElement).src = lroImg; }}
                 alt="LRO NAC Reference"
                 className="w-full h-full object-cover"
@@ -531,10 +533,11 @@ export const KeypointViewer: React.FC<KeypointViewerProps> = ({
 
         {/* MODE 2: SWIPE SLIDER */}
         {viewMode === 'split' && (
-          <div className="relative w-full h-full p-3">
+          <div className="relative w-full h-full p-3 select-none" onMouseMove={handleMouseMove} onMouseUp={handleMouseUp}>
             <div className="split-container relative w-full h-full rounded-2xl overflow-hidden border border-white/10 bg-black shadow-inner">
               {/* Bottom Layer: Reference */}
               <img
+                key={`${pairId}-split-ref`}
                 src={liveRefUrl}
                 onError={(e) => { (e.target as HTMLImageElement).src = lroImg; }}
                 alt="LRO NAC Reference"
@@ -547,6 +550,7 @@ export const KeypointViewer: React.FC<KeypointViewerProps> = ({
                 style={{ clipPath: `polygon(0 0, ${sliderPos}% 0, ${sliderPos}% 100%, 0 100%)` }}
               >
                 <img
+                  key={`${pairId}-split-src`}
                   src={liveSrcUrl}
                   onError={(e) => { (e.target as HTMLImageElement).src = ohrcImg; }}
                   alt="CH-2 OHRC Foreground"
@@ -583,6 +587,7 @@ export const KeypointViewer: React.FC<KeypointViewerProps> = ({
           <div className="relative w-full h-full p-3">
             <div className="relative w-full h-full rounded-2xl overflow-hidden border border-white/10 bg-black shadow-inner">
               <img
+                key={`${pairId}-checkerboard-src`}
                 src={liveSrcUrl}
                 onError={(e) => { (e.target as HTMLImageElement).src = ohrcImg; }}
                 alt="CH-2 OHRC"
@@ -609,6 +614,7 @@ export const KeypointViewer: React.FC<KeypointViewerProps> = ({
           <div className="relative w-full h-full p-3">
             <div className="relative w-full h-full rounded-2xl overflow-hidden border border-white/10 bg-black shadow-inner flex items-center justify-center">
               <img
+                key={`${pairId}-residuals-src`}
                 src={liveSrcUrl}
                 onError={(e) => { (e.target as HTMLImageElement).src = ohrcImg; }}
                 alt="CH-2 OHRC Base"
