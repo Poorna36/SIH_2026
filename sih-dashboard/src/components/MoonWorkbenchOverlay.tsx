@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Plus, Minus, RotateCcw, Globe, GitCommit, FlaskConical,
   ChevronDown, Play, Check, Sliders, Upload,
@@ -25,6 +25,62 @@ export interface ProbedLocation {
   psrStatus: string;
   craterId?: string;
 }
+
+const VisualProgressBar: React.FC<{
+  status: 'idle' | 'processing' | 'completed' | 'error';
+}> = ({ status }) => {
+  const [progress, setProgress] = useState(14);
+
+  useEffect(() => {
+    if (status === 'processing') {
+      setProgress(16);
+      const timer = setInterval(() => {
+        setProgress((prev) => {
+          if (prev >= 93) return prev;
+          const remaining = 93 - prev;
+          const step = Math.max(1, Math.floor(remaining * 0.1));
+          return Math.min(93, prev + step);
+        });
+      }, 350);
+      return () => clearInterval(timer);
+    } else if (status === 'completed') {
+      setProgress(100);
+    } else {
+      setProgress(0);
+    }
+  }, [status]);
+
+  if (status !== 'processing' && status !== 'completed') return null;
+
+  const isDone = status === 'completed';
+
+  return (
+    <div className="w-full flex flex-col gap-1.5 mt-1">
+      <div className="flex items-center justify-between text-[10px] font-mono tracking-wide">
+        <span className="text-white/60">
+          {isDone ? 'Pipeline Complete' : 'Processing Progress'}
+        </span>
+        <span className={`font-bold transition-colors duration-300 ${isDone ? 'text-emerald-400' : 'text-[#2997FF]'}`}>
+          {Math.round(progress)}%
+        </span>
+      </div>
+
+      <div className="relative w-full h-2 bg-black/50 rounded-full overflow-hidden p-0.5 border border-white/10 shadow-inner">
+        <div
+          className={`h-full rounded-full transition-all duration-300 ease-out relative ${
+            isDone
+              ? 'bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-300 shadow-[0_0_12px_rgba(52,211,153,0.8)]'
+              : 'bg-gradient-to-r from-[#0071E3] via-[#2997FF] to-[#64D2FF] shadow-[0_0_12px_rgba(41,151,255,0.8)]'
+          }`}
+          style={{ width: `${progress}%` }}
+        >
+          {/* Leading edge glow bead */}
+          <div className="absolute right-0 top-0 bottom-0 w-1.5 rounded-full bg-white/70 shadow-[0_0_6px_rgba(255,255,255,0.9)]" />
+        </div>
+      </div>
+    </div>
+  );
+};
 
 interface MoonWorkbenchOverlayProps {
   selectedScene: ScenePreset;
@@ -261,12 +317,8 @@ export const MoonWorkbenchOverlay: React.FC<MoonWorkbenchOverlayProps> = ({
               </p>
             </div>
 
-            {/* Processing Progress Bar */}
-            {processingState.status === 'processing' && (
-              <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden mt-0.5">
-                <div className="h-full bg-gradient-to-r from-[#0071E3] via-[#2997FF] to-[#64D2FF] rounded-full animate-pulse w-3/4 transition-all duration-500" />
-              </div>
-            )}
+            {/* Visual Dynamic Progress Bar */}
+            <VisualProgressBar status={processingState.status} />
 
             {/* Complete Processing Action Button */}
             {processingState.status === 'completed' && onCompleteProcessing && (
