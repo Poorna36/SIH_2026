@@ -33,8 +33,9 @@ _ROOT = Path(__file__).resolve().parent.parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
-OHR_DIR = Path(r"C:\Users\poorn\Downloads\ch2_ohr_ncp_20211228T2209123959_d_img_d18")
-TMC_DIR = Path(r"C:\Users\poorn\Downloads\ch2_tmc_ncf_20220613T1623247403_d_img_d32")
+DATASET_BASE = Path(r"D:\neo\hachathon\SIH 2026\yolo\real_dataset")
+OHR_DIR = DATASET_BASE / "ohrc" / "ch2_ohr_ncp_20211228T2209123959_d_img_d18"
+TMC_DIR = DATASET_BASE / "tmc" / "ch2_tmc_ncf_20220613T1623247403_d_img_d32"
 
 OHR_XML = OHR_DIR / "data/calibrated/20211228/ch2_ohr_ncp_20211228T2209123959_d_img_d18.xml"
 OHR_BRW = OHR_DIR / "browse/calibrated/20211228/ch2_ohr_ncp_20211228T2209123959_b_brw_d18.png"

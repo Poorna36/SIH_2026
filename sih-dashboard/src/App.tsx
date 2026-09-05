@@ -8,7 +8,7 @@ import { ResultsView } from './components/ResultsView';
 import { AddFilesModal } from './components/AddFilesModal';
 import { WebGlMoonViewer } from './components/landing/WebGlMoonViewer';
 import { useBackendData } from './hooks/useBackendData';
-import { getSlzData, getSpectralData, getTelemetryData, uploadMissionFiles } from './services/api';
+import { getSlzData, getSpectralData, getTelemetryData, uploadMissionFiles, API_BASE } from './services/api';
 import {
   PipelineStage,
   type PipelineOptions,
@@ -183,7 +183,7 @@ export function App() {
     }
     // Fallback: fetch directly from /api/datasets/{pair_id}
     if (!isBackendOnline) return;
-    fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'}/api/datasets/${encodeURIComponent(selectedScene.id)}`)
+    fetch(`${API_BASE}/api/datasets/${encodeURIComponent(selectedScene.id)}`)
       .then((r) => r.ok ? r.json() : null)
       .then((data) => {
         if (!data) return;
