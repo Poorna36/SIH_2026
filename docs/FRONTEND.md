@@ -96,10 +96,34 @@ The dashboard features dual operational modes with automatic fallback:
 ### Key API Endpoints
 - `GET /api/health`: Service status and hardware acceleration flags.
 - `GET /api/datasets/`: Catalog of available source-reference pairs from `manifest.jsonl`.
+- `GET /api/datasets/{pair_id}/crop`: Dynamic memory-mapped sub-pixel raw `.img` crop endpoint with live radiometric and slope statistics.
+- `POST /api/datasets/upload`: Ingests user-provided mission files (PDS-4 XML, .IMG binary rasters, .ZIP packages) with recursive discovery and chunked disk streaming.
 - `GET /api/config/matchers`: Matcher registry configurations and parameter definitions.
 - `POST /api/pipeline/run`: Triggers pipeline execution for a selected pair.
 - `GET /api/metrics/{pair_id}`: Retrieves final evaluation metrics and inlier checkpoints.
 
 ---
+
+## 7. Deep-Zoom Lossless Sub-Pixel Inspection View (`DeepZoomInspector.tsx`)
+
+A high-performance ROI loupe viewport for deep sub-pixel analysis:
+- **Interactive Minimap Reticle**: Click or drag anywhere on the full scene minimap to reposition the zoom window.
+- **Magnification Ladder**: 1x (Macro), 2x (Surface), 4x (Craters), 8x (Boulders), 16x (Raw Pixel Matrix).
+- **Four Inspection Modes**: Split Swipe, 64px Checkerboard, Sub-Pixel Vectors, Slope Hazard Relief.
+- **Sensor Telemetry HUD**: Real-time cursor $(X, Y)$ coordinates, physical meter scale bar ($cm/px$), raw Digital Number (DN) intensity value, and local Safe Landing Zone slope score.
+
+---
+
+## 8. Mission Data Ingestion Modal (`AddFilesModal.tsx`)
+
+The ingestion modal allows operators to ingest new Chandrayaan-2 orbital products into the dashboard:
+- **Directory & Folder Bundle Ingestion**: Supports uploading entire mission folders and nested directory structures using either the dedicated **"Browse Folder / Bundle"** button or by dragging-and-dropping directories directly into the dropzone.
+- **Recursive Entry Traversal**: Uses HTML5 `webkitGetAsEntry()` and `FileSystemDirectoryEntry` recursion to scan and unpack all nested files (e.g. `data/`, `calibrated/`, `label/`) and preserves relative directory hierarchies.
+- **Intelligent File Badging**: Automatically classifies dropped assets as `PDS-4 Label`, `Raw .IMG Raster`, `Archive Package`, or `Calibrated Image`.
+- **Archive Extraction**: Recursively discovers XML labels and raw raster arrays inside `.zip` folders.
+- **Role Assignment**: Dynamic toggles for assigning files as `Source (Mission)` or `Reference (Baseline)`.
+- **Live Ingestion Ticker**: Visual multi-stage status indicators (`Stage S1 ➔ S5: Parse XML ➔ Memmap Pixels ➔ Sub-Pixel Matching`).
+- **Extended Timeout**: 300-second network buffer supporting multi-hundred-megabyte orbital datasets.
+
 
 

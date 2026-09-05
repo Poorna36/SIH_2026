@@ -348,34 +348,81 @@ export async function getTelemetryData(pairId: string): Promise<BackendTelemetry
   return apiFetch<BackendTelemetryDiagnostic>(`/api/science/telemetry/${encodeURIComponent(pairId)}`);
 }
 
+export interface CropDataResponse {
+  pair_id: string;
+  zoom_level: number;
+  norm_coord: [number, number];
+  effective_gsd_m: number;
+  scale_cm_per_px: number;
+  src_crop_base64: string;
+  ref_crop_base64: string;
+  dn_stats: {
+    min: number;
+    max: number;
+    mean: number;
+    std: number;
+    bit_depth: string;
+  };
+  local_slz: {
+    slope_deg: number;
+    slope_pass_rate: number;
+    hazard_rating: string;
+  };
+  local_rmse_px: number;
+  local_keypoints: Array<{
+    id: number;
+    src_xy: [number, number];
+    ref_xy: [number, number];
+    confidence: number;
+    is_inlier: boolean;
+  }>;
+}
+
+/** Fetch dynamic memory-mapped lossless deep-zoom sub-pixel crop */
+export async function getCropData(
+  pairId: string,
+  normX: number,
+  normY: number,
+  cropSize = 512,
+  zoom = 2.0
+): Promise<CropDataResponse | null> {
+  return apiFetch<CropDataResponse>(
+    `/api/datasets/${encodeURIComponent(pairId)}/crop?norm_x=${normX}&norm_y=${normY}&crop_size=${cropSize}&zoom=${zoom}`
+  );
+}
+
 /** Get full lunar crater catalog, optionally with search query */
 export async function getCraterCatalog(query?: string): Promise<BackendCraterDetail[] | null> {
   const url = query && query.trim() ? `/api/science/craters/?q=${encodeURIComponent(query.trim())}` : '/api/science/craters/';
   return apiFetch<BackendCraterDetail[]>(url);
 }
 
-/** Upload user-provided mission imagery files with role selection, coordinates, and timeout */
+/** Upload user-provided mission imagery files with role selection.
+ * Sensor is used ONLY for verification against detected file metadata.
+ * Lat/lon coordinates are NEVER sent from the browser — they are always
+ * extracted exclusively from the uploaded PDS-4 XML or HTML metadata files.
+ */
 export async function uploadMissionFiles(
   files: File[],
   pairName?: string,
   sensor?: string,
-  roles?: string[],
-  lat?: number,
-  lon?: number
+  roles?: string[]
 ): Promise<{ status: string; pair_id: string; name: string; message: string; pair?: any }> {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 60000);
+  const timeoutId = setTimeout(() => controller.abort(), 300000);
 
   try {
     const formData = new FormData();
     files.forEach((file) => {
-      formData.append('files', file);
+      // Preserve relative directory path (from folder upload) as filename
+      const relativePath = (file as any).webkitRelativePath || file.name;
+      formData.append('files', file, relativePath);
     });
     if (pairName && pairName.trim()) formData.append('pair_name', pairName.trim());
+    // Sensor appended as verify-hint only (backend will reject if mismatch detected)
     if (sensor && sensor.trim()) formData.append('sensor', sensor.trim());
     if (roles && roles.length > 0) formData.append('roles', roles.join(','));
-    if (lat !== undefined && !isNaN(lat)) formData.append('lat', lat.toString());
-    if (lon !== undefined && !isNaN(lon)) formData.append('lon', lon.toString());
+    // NOTE: lat/lon are intentionally NOT appended — coordinates come from metadata files only
 
     const res = await fetch(`${API_BASE}/api/datasets/upload`, {
       method: 'POST',
@@ -391,7 +438,7 @@ export async function uploadMissionFiles(
     return await res.json();
   } catch (error: any) {
     if (error?.name === 'AbortError') {
-      throw new Error('Upload timed out after 60 seconds. Please check your network or try smaller files.');
+      throw new Error('Upload timed out after 5 minutes. Please check your network or try smaller files.');
     }
     console.error('Failed to upload mission files:', error);
     throw error;
@@ -399,5 +446,6 @@ export async function uploadMissionFiles(
     clearTimeout(timeoutId);
   }
 }
+
 
 

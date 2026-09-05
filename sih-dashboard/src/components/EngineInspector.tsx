@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import {
   X, Cpu, Sliders, Database, Check, FolderOpen, Save,
-  RefreshCw
+  RefreshCw, Upload, FolderUp, FileText
 } from 'lucide-react';
 import type {
   PipelineOptions,
@@ -27,6 +27,76 @@ interface EngineInspectorProps {
   onSelectPair?: (pairId: string) => void;
 }
 
+/**
+ * Recursively scans all files and directories from drag-and-drop DataTransfer.
+ */
+const scanFilesFromDataTransfer = async (dataTransfer: DataTransfer): Promise<File[]> => {
+  const files: File[] = [];
+  const items = dataTransfer.items;
+
+  if (items && items.length > 0) {
+    const traverseEntry = async (entry: any): Promise<void> => {
+      if (!entry) return;
+      if (entry.isFile) {
+        await new Promise<void>((resolve) => {
+          entry.file(
+            (file: File) => {
+              if (entry.fullPath && entry.fullPath !== `/${file.name}`) {
+                try {
+                  Object.defineProperty(file, 'webkitRelativePath', {
+                    value: entry.fullPath.replace(/^\//, ''),
+                    writable: true,
+                  });
+                } catch {
+                  // Ignore
+                }
+              }
+              files.push(file);
+              resolve();
+            },
+            () => resolve()
+          );
+        });
+      } else if (entry.isDirectory) {
+        const dirReader = entry.createReader();
+        const readBatch = async (): Promise<any[]> => {
+          return new Promise((resolve) => {
+            dirReader.readEntries(
+              (entries: any[]) => resolve(entries || []),
+              () => resolve([])
+            );
+          });
+        };
+        let batch = await readBatch();
+        while (batch && batch.length > 0) {
+          for (const child of batch) {
+            await traverseEntry(child);
+          }
+          batch = await readBatch();
+        }
+      }
+    };
+
+    const promises: Promise<void>[] = [];
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.webkitGetAsEntry) {
+        const entry = item.webkitGetAsEntry();
+        if (entry) {
+          promises.push(traverseEntry(entry));
+          continue;
+        }
+      }
+      const f = item.getAsFile();
+      if (f) files.push(f);
+    }
+    await Promise.all(promises);
+  } else if (dataTransfer.files && dataTransfer.files.length > 0) {
+    files.push(...Array.from(dataTransfer.files));
+  }
+  return files;
+};
+
 export const EngineInspector: React.FC<EngineInspectorProps> = ({
   isOpen,
   onClose,
@@ -46,6 +116,7 @@ export const EngineInspector: React.FC<EngineInspectorProps> = ({
   const [dragOver, setDragOver] = useState(false);
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
 
   if (!isOpen) return null;
 
@@ -63,17 +134,33 @@ export const EngineInspector: React.FC<EngineInspectorProps> = ({
     }
   };
 
-  const handleDrop = (e: React.DragEvent) => {
+  const handleFilesAdded = (files: FileList | File[]) => {
+    const arr = Array.from(files);
+    const newFiles: UploadedFile[] = arr.map((f) => {
+      const relPath = (f as any).webkitRelativePath || f.name;
+      const lower = relPath.toLowerCase();
+      return {
+        name: relPath,
+        size: f.size,
+        sensor: lower.includes('ohr') ? 'OHRC' : lower.includes('iirs') ? 'IIRS' : 'TMC-2',
+        status: 'ready',
+      };
+    });
+    setUploadedFiles((prev) => [...prev, ...newFiles]);
+  };
+
+  const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault();
     setDragOver(false);
-    if (e.dataTransfer.files) {
-      const newFiles: UploadedFile[] = Array.from(e.dataTransfer.files).map((f) => ({
-        name: f.name,
-        size: f.size,
-        sensor: f.name.toLowerCase().includes('ohr') ? 'OHRC' : 'TMC-2',
-        status: 'ready',
-      }));
-      setUploadedFiles((prev) => [...prev, ...newFiles]);
+    try {
+      const extractedFiles = await scanFilesFromDataTransfer(e.dataTransfer);
+      if (extractedFiles.length > 0) {
+        handleFilesAdded(extractedFiles);
+      }
+    } catch {
+      if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+        handleFilesAdded(e.dataTransfer.files);
+      }
     }
   };
 
@@ -379,39 +466,67 @@ export const EngineInspector: React.FC<EngineInspectorProps> = ({
                 Ingest Custom Mission Data
               </div>
 
+              {/* Native inputs for individual files and folder bundles */}
               <input
                 ref={fileInputRef}
                 type="file"
                 multiple
-                accept=".xml,.img,.tif,.tiff,.qub,.png,.jpg,.jpeg"
+                accept=".xml,.img,.tif,.tiff,.qub,.png,.jpg,.jpeg,.zip"
                 onChange={(e) => {
-                  if (e.target.files) {
-                    const newFiles: UploadedFile[] = Array.from(e.target.files).map((f) => ({
-                      name: f.name,
-                      size: f.size,
-                      sensor: f.name.toLowerCase().includes('ohr') ? 'OHRC' : 'TMC-2',
-                      status: 'ready',
-                    }));
-                    setUploadedFiles((prev) => [...prev, ...newFiles]);
-                  }
+                  if (e.target.files) handleFilesAdded(e.target.files);
+                }}
+                className="hidden"
+              />
+              <input
+                ref={folderInputRef}
+                type="file"
+                {...({ webkitdirectory: '', directory: '' } as any)}
+                multiple
+                onChange={(e) => {
+                  if (e.target.files) handleFilesAdded(e.target.files);
                 }}
                 className="hidden"
               />
 
               <div
-                onClick={() => fileInputRef.current?.click()}
                 onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
                 onDragLeave={() => setDragOver(false)}
                 onDrop={handleDrop}
-                className={`p-6 rounded-3xl border border-dashed text-center cursor-pointer transition-all ${
+                className={`p-5 rounded-3xl border border-dashed text-center transition-all ${
                   dragOver
-                    ? 'border-[#0071E3] bg-[#0071E3]/10'
+                    ? 'border-[#0071E3] bg-[#0071E3]/15 scale-[1.01]'
                     : 'border-white/15 hover:border-white/30 bg-white/[0.02] hover:bg-white/[0.04]'
                 }`}
               >
-                <FolderOpen size={24} className="mx-auto text-white/60 mb-2" />
-                <p className="font-bold text-white text-xs">Drop PDS-4 files here</p>
-                <p className="text-[10px] text-white/40 mt-1">Supports .IMG, .TIF, .QUB, .XML</p>
+                <div className="flex items-center justify-center gap-2 mb-2 text-[#2997FF]">
+                  <div className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center">
+                    <Upload size={15} />
+                  </div>
+                  <div className="w-8 h-8 rounded-full bg-[#0071E3]/20 border border-[#2997FF]/30 flex items-center justify-center text-white">
+                    <FolderUp size={15} />
+                  </div>
+                </div>
+                <p className="font-bold text-white text-xs">Drop files or mission folders here</p>
+                <p className="text-[10px] text-white/40 mt-1">Supports .IMG, .TIF, .QUB, .XML, .ZIP & Directory Bundles</p>
+
+                <div className="flex items-center justify-center gap-2 mt-3">
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="px-2.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/15 text-white text-[11px] font-medium border border-white/10 flex items-center gap-1.5 transition-all cursor-pointer"
+                  >
+                    <FileText size={12} className="text-[#2997FF]" />
+                    <span>Files</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => folderInputRef.current?.click()}
+                    className="px-2.5 py-1.5 rounded-xl bg-[#0071E3]/20 hover:bg-[#0071E3]/30 text-white text-[11px] font-bold border border-[#2997FF]/40 flex items-center gap-1.5 transition-all cursor-pointer"
+                  >
+                    <FolderOpen size={12} className="text-[#2997FF]" />
+                    <span>Folder Bundle</span>
+                  </button>
+                </div>
               </div>
 
               {uploadedFiles.length > 0 && (
@@ -422,14 +537,16 @@ export const EngineInspector: React.FC<EngineInspectorProps> = ({
                       Clear
                     </button>
                   </div>
-                  {uploadedFiles.map((f, i) => (
-                    <div key={i} className="p-2 rounded-xl bg-white/[0.02] border border-white/5 flex items-center justify-between">
-                      <span className="text-white text-xs font-mono truncate">{f.name}</span>
-                      <span className="text-[10px] text-white/40 font-mono shrink-0">
-                        {(f.size / 1024).toFixed(0)} KB
-                      </span>
-                    </div>
-                  ))}
+                  <div className="space-y-1.5 max-h-48 overflow-y-auto sidebar-scroll pr-1">
+                    {uploadedFiles.map((f, i) => (
+                      <div key={i} className="p-2 rounded-xl bg-white/[0.02] border border-white/5 flex items-center justify-between">
+                        <span className="text-white text-xs font-mono truncate pr-2">{f.name}</span>
+                        <span className="text-[10px] text-white/40 font-mono shrink-0">
+                          {(f.size / 1024).toFixed(0)} KB
+                        </span>
+                      </div>
+                    ))}
+                  </div>
                   <button
                     onClick={() => {
                       alert(`Ingesting ${uploadedFiles.length} files into PDS-4 pipeline catalog. Parsing geo-referencing footprints...`);

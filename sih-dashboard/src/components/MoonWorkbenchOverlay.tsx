@@ -187,16 +187,16 @@ export const MoonWorkbenchOverlay: React.FC<MoonWorkbenchOverlayProps> = ({
           ) : (
             <Play size={13} className={isRunning ? 'animate-spin' : 'fill-current'} />
           )}
-          <span>{isDone ? `Registered (${telemetryRmse.toFixed(3)} px)` : isRunning ? 'Aligning...' : 'Run Co-Registration'}</span>
+          <span>{isDone ? 'Co-Registered' : isRunning ? 'Aligning...' : 'Run Co-Registration'}</span>
         </button>
 
         <div className="w-px h-4 bg-white/20 mx-0.5" />
 
-        {/* Live Telemetry Readout */}
+        {/* Engine Status Readout */}
         <div className="px-3 py-1 text-xs text-white/60 font-mono flex items-center gap-1.5">
           <span className={`w-1.5 h-1.5 rounded-full ${isBackendOnline ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)]' : 'bg-amber-400'}`} />
-          <span>RMSE: <strong className="text-white">{telemetryRmse.toFixed(3)} px</strong></span>
-          <span className="text-[10px] text-white/40 ml-1">({isBackendOnline ? 'LIVE' : 'CACHE'})</span>
+          <span className="text-white font-medium">{isDone ? 'Registration Active' : isRunning ? 'Processing Pipeline' : 'Engine Ready'}</span>
+          <span className="text-[10px] text-white/40 ml-1">({isBackendOnline ? 'ONLINE' : 'STANDBY'})</span>
         </div>
       </div>
 

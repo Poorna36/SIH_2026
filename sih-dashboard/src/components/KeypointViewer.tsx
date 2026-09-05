@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Eye, MoveHorizontal, Grid3X3, Activity, Sparkles } from 'lucide-react';
+import { Eye, MoveHorizontal, Grid3X3, Activity, Sparkles, ZoomIn } from 'lucide-react';
 import type { KeypointMatch } from '../types';
 import { getKeypointMatches, API_BASE } from '../services/api';
+import { DeepZoomInspector } from './DeepZoomInspector';
 import ohrcImg from '../assets/images/ohrc_orbital_fallback.jpg';
 import lroImg from '../assets/images/lro_reference_baseline_1788336850293.jpg';
 
@@ -52,7 +53,7 @@ export const KeypointViewer: React.FC<KeypointViewerProps> = ({
   const [sliderPos, setSliderPos] = useState<number>(50);
   const [showInliers, setShowInliers] = useState<boolean>(true);
   const [showOutliers, setShowOutliers] = useState<boolean>(true);
-  const [viewMode, setViewMode] = useState<'side-by-side' | 'split' | 'checkerboard' | 'residuals'>('side-by-side');
+  const [viewMode, setViewMode] = useState<'side-by-side' | 'split' | 'checkerboard' | 'residuals' | 'deepzoom'>('side-by-side');
   const [hoveredMatch] = useState<KeypointMatch | null>(null);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -432,6 +433,7 @@ export const KeypointViewer: React.FC<KeypointViewerProps> = ({
             { id: 'split', label: 'Slider', icon: <MoveHorizontal size={12} /> },
             { id: 'checkerboard', label: 'Checkerboard', icon: <Grid3X3 size={12} /> },
             { id: 'residuals', label: 'Residuals', icon: <Activity size={12} /> },
+            { id: 'deepzoom', label: 'Deep Zoom', icon: <ZoomIn size={12} /> },
           ].map((tab) => (
             <button
               key={tab.id}
@@ -458,6 +460,13 @@ export const KeypointViewer: React.FC<KeypointViewerProps> = ({
         onMouseLeave={handleMouseUp}
         className="relative flex-1 w-full h-full overflow-hidden bg-[#050608] flex items-center justify-center select-none"
       >
+        {/* MODE 5: LOSSLESS DEEP-ZOOM SUB-PIXEL LOUPE */}
+        {viewMode === 'deepzoom' && (
+          <div className="w-full h-full p-2">
+            <DeepZoomInspector pairId={pairId} gsdM={0.31} onProbeCoord={onProbeCoord} />
+          </div>
+        )}
+
         {/* MODE 1: SIDE-BY-SIDE WITH MERGED-TO-SEPARATED ANIMATION */}
         {viewMode === 'side-by-side' && (
           <div className="relative w-full h-full flex p-3 gap-3 overflow-hidden">

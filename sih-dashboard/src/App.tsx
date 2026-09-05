@@ -37,11 +37,11 @@ const DEFAULT_SCENE: ScenePreset = {
 
 const DEFAULT_TELEMETRY: TelemetryData = {
   rmsePx: 0.34,
-  ssim: 0.89,
-  inlierRatio: 0.924,
-  inlierCount: 157,
-  candidateCount: 170,
-  spatialCoverage: 0.78,
+  ssim: 0.91,
+  inlierRatio: 0.72,
+  inlierCount: 36,
+  candidateCount: 50,
+  spatialCoverage: 0.84,
   gridDensityStd: 2.3,
   refinementGainPx: 0.23,
   solarIncidenceDeg: 68.2,
@@ -50,7 +50,7 @@ const DEFAULT_TELEMETRY: TelemetryData = {
   matcherWinner: 'lightglue',
   pairId: 'boguslawsky',
   utc: '2020-08-27T00:30:10.884Z',
-  runtimeS: 6.8,
+  runtimeS: 4.8,
   ladderLevel: 2,
 };
 

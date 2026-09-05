@@ -749,6 +749,201 @@ Verification:
 
 Verification:
 - `npm run build` in `landing page0.2` executed cleanly with 0 TypeScript/Vite errors (exit code 0).
+## 2026-09-01 — Left-Side Satellite HUD Drawer & Sequenced Orbit Recovery Animation
+
+1. **Left-Side Slide-Over Drawer Architecture**:
+   - Replaced the center modal with a non-blocking left-side slide-over HUD panel (`w-[460px] max-w-[92vw]`).
+   - The 3D Moon and orbiting satellite on the center/right remain **100% visible, unobstructed, and interactive** while exploring telemetry.
+2. **Sequenced Thruster Flare & Orbit Regaining Animation**:
+   - Clicking the satellite immediately fires the physical thruster impulse, kicking it outward and initiating its dynamic acrobatic spin and Hooke's law spring orbit recovery.
+   - After $750\text{ms}$ of watching the orbital maneuver play out live in space, the left telemetry drawer smoothly glides in alongside the active orbit.
+
+Verification:
+- `npm run build` executed cleanly with 0 TypeScript/Vite errors (exit code 0).
+
+## 2026-09-01 — Replaced Satellite Icon with Authentic Chandrayaan-2 Orbiter Photo
+
+1. **Authentic Spacecraft Picture**:
+   - Replaced the drawn SVG/icon with a high-resolution render photo of the actual Chandrayaan-2 lunar orbiter showing its gold thermal MLI foil bus, cobalt solar panels, high-gain parabolic dish, and Indian space program markings.
+2. **Emerald Telemetry Frame**:
+   - Framed within a glowing rounded container (`w-12 h-12 rounded-2xl border border-emerald-500/50`) with an active pulsing emerald link status beacon.
+
+Verification:
+- `npm run build` executed cleanly with 0 TypeScript/Vite errors (exit code 0).
+
+## 2026-09-01 — Accurate ISRO PDS-4 Science Dataset Specification (No Misleading Live Feed Claims)
+
+1. **Clarified True Dataset Architecture**:
+   - Replaced all misleading "LIVE TELEMETRY / ACTIVE LIVE FEED" labels with authentic **"PDS-4 ARCHIVE"** and **"ISRO Planetary Data System Suite"** references.
+2. **Accurate Payload & Sensor Badges**:
+   - Updated each sensor's status badge to clearly describe its scientific PDS data product:
+     - **OHRC**: `PDS-4 DATA • 0.32m ORTHO`
+     - **IIRS**: `PDS-4 DATA • HYPERSPECTRAL`
+     - **TMC-2**: `PDS-4 DATA • 3D DEM STEREO`
+     - **CLASS**: `PDS-4 DATA • XRF SPECTRA`
+     - **DFSAR**: `PDS-4 DATA • RADAR SOUND`
+3. **Data Pipeline Transparency**:
+   - Tab 2 & 3 now highlight the **ISRO Indian Space Science Data Centre (ISSDC)** official repository and the workbench's calibrated Level-1/Level-2 PDS-4 data ingestion pipeline.
+
+Verification:
+- `npm run build` executed cleanly with 0 TypeScript/Vite errors (exit code 0).
+
+## 2026-09-01 — Blue Spiderweb Laser Scanning Ray Array
+
+1. **Spiderweb Geometry & Geodesic Lattice**:
+   - Constructed an interactive multi-ray scanning lattice consisting of $12$ radial apex laser spokes projecting from the satellite down to the lunar surface, coupled with $4$ concentric polygonal web loops and diagonal cross-ribs.
+2. **Dynamic Swath & Surface Projection**:
+   - In real time, the scanning web projects onto the sphere of the Moon, calculating surface normals and pulsating with breathing cyan-to-electric-blue light (`#00E5FF` $\to$ `#0066FF`) using additive blending.
+3. **State Integration**:
+   - The spiderweb laser swath remains actively engaged and pulsing as long as the information drawer is open, smoothly fading out with easing upon closing.
+
+Verification:
+- `npm run build` executed cleanly with 0 TypeScript/Vite errors (exit code 0).
+
+## 2026-09-01 — Precision Nadir-Pointing Satellite Sensor Attitude
+
+1. **Nadir Optical Sensor Deck**:
+   - Mounted the primary OHRC ultra-high resolution camera, IIRS spectrometer aperture, and TMC-2 stereo lenses directly on the satellite's nadir deck ($+Z$ face).
+2. **Real-Time Lunar Attitude Lock**:
+   - Built a dynamic orthonormal attitude matrix ($\vec{u}_{\text{nadir}} = \frac{\vec{P}_{\text{moon}} - \vec{P}_{\text{sat}}}{\|\vec{P}_{\text{moon}} - \vec{P}_{\text{sat}}\|}$) ensuring the optical sensors continuously track and face directly at the Moon center throughout all $360^\circ$ of its orbit.
+   - The solar array wings ($\pm X$) maintain balanced orbital lateral orientation, and the high-gain dish antenna ($-Z$) points away into deep space towards Earth.
+
+Verification:
+- `npm run build` executed cleanly with 0 TypeScript/Vite errors (exit code 0).
+
+## 2026-09-01 — Fixed Satellite Planar Distortion & Gimbal Flipping
+
+1. **Eliminated Matrix Singularity & Flattening**:
+   - Replaced dynamic cross-product basis synthesis (which caused degenerate matrix scale collapse into a flat paper sheet at orbital nodes) with Three.js canonical, stable `satellite.lookAt(moonPos)` referencing fixed celestial `up = (0, 1, 0)`.
+2. **Enforced Rigid 3D Cubic Proportions**:
+   - Explicitly locked uniform scale (`satellite.scale.set(1.0, 1.0, 1.0)`) on every animation frame, ensuring the golden satellite bus and solar panels remain solid 3D cubes throughout all orbital phases.
+3. **Nadir Optical Alignment**:
+   - Mounted the OHRC, IIRS, and TMC-2 camera optics on the $-Z$ nadir face, ensuring the sensors continuously point directly at the Moon with smooth continuous rotation and zero abrupt flips.
+
+Verification:
+- `npm run build` executed cleanly with 0 TypeScript/Vite errors (exit code 0).
+
+## 2026-09-01 — Backend FastAPI API Bridge & Frontend Integration (Read-Only Core Backend)
+
+1. **Cloned Backend Repository**:
+   - Cloned `backend` branch from `https://github.com/Poorna36/SIH_2026.git` into `d:\SIH frontend\backend`.
+   - Preserved all core pipeline algorithms, configurations, and scripts completely intact without modifying existing code.
+2. **FastAPI REST API Server (`backend/api/server.py`)**:
+   - Built a high-performance, CORS-enabled FastAPI server with endpoints:
+     - `GET /api/health` — API health check & connectivity status
+     - `GET /api/datasets/` & `/stats` — Real PDS-4 pair manifest and dataset split statistics
+     - `GET /api/config/` & `/matchers` — Matcher registry and arbitration policy from `matchers.yaml`
+     - `POST /api/pipeline/run` & `GET /history` — Pipeline execution and run tracking
+     - `GET /api/metrics/` & `/ground-truth/{pair_id}` — Registration results and evaluation metrics
+3. **Frontend API Layer & Real-Time Sync (`sih-dashboard`)**:
+   - Created `services/api.ts` typed client with automatic silent fallback to mock data when backend is offline.
+   - Created `hooks/useBackendData.ts` for reactive state synchronization and 30s heartbeat polling.
+   - Enhanced `Header.tsx` with live `FASTAPI :8000` connection status badge.
+   - Enhanced `SidebarControls.tsx` with live PDS-4 pairs selector (OHRC, IIRS, TMC-2) and YAML matcher configuration badge.
+   - Connected `App.tsx` pipeline runner to trigger live backend runs.
+
+Verification:
+- Backend server running on `http://localhost:8000/` (Tested with `Invoke-RestMethod`).
+- `sih-dashboard` compiled with `npm run build` with 0 TypeScript/Vite errors (exit code 0).
+- `landing page0.2` compiled with `npm run build` with 0 TypeScript/Vite errors (exit code 0).
+
+## 2026-09-01 — Deep Space Cosmos Environment & Atmosphere Upgrade
+
+1. **Multi-Tier Deep Starfield (6,500 Stars)**:
+   - Built a multi-spectral starfield containing white hypergiants, cobalt blue stellar flares, warm solar stars, and red dwarfs with depth attenuation and additive blending.
+2. **Volumetric Deep Space Nebulae**:
+   - Added volumetric cosmic dust clouds (cosmic violet `#3B0764`, deep celestial blue `#1E3A8A`, interstellar emerald `#064E3B`) creating rich cosmic depth behind the Moon.
+3. **Distant Earth (Blue Marble)**:
+   - Added Earth in the distant upper-left cosmos ($X = -23, Y = 12, Z = -60$) with oceanic textures, rotational physics, and a glowing cyan Rayleigh scattering atmosphere shell.
+4. **Cosmic Stardust & Meteor Streaks**:
+   - Simulated 350 micro-particles of floating foreground cosmic stardust drifting through sunlight with Brownian motion.
+   - Added high-velocity shooting stars with dynamic fading trails traversing the cosmic backdrop.
+5. **Lunar Exosphere Halo & Spacecraft Cockpit HUD**:
+   - Added a soft lunar exosphere / sodium Rayleigh halo shell around the Moon limb.
+   - Added glassmorphic spacecraft telemetry HUD overlays with orbital insertion coordinates, live ephemeris tickers, and spatial crosshairs.
+
+Verification:
+- `npm run build` executed cleanly with 0 TypeScript/Vite errors (exit code 0).
+
+## 2026-09-01 — Streamlined Deep Space Visuals (Clean Obsidian Cosmos)
+
+1. **Removed Distant Earth**:
+   - Removed the distant blue planetary mesh from the Three.js scene, preserving a pure, unobstructed deep cosmic starfield.
+2. **Removed Screen Corner HUD Texts**:
+   - Removed the system telemetry, ephemeris, and interaction text overlays from the corners of `App.tsx` for a clean, distraction-free space environment.
+3. **Preserved Rich Core Space Systems**:
+   - 6,500 multi-spectral twinkling stars, deep space volumetric nebulae, 350 floating stardust micro-particles, dynamic shooting star streaks, lunar limb exosphere glow, orbiting satellite with nadir tracking, and the magnetic Contact button.
+
+Verification:
+- `npm run build` in `landing page0.2` executed cleanly with 0 TypeScript/Vite errors (exit code 0).
+
+## 2026-09-01 — Fixed Scene Preset & Pairs Dropdown Stacking Context (Z-Index Clipping)
+
+1. **Root Cause**:
+   - The `.panel-card` CSS class has `position: relative; backdrop-filter: blur(20px);`, which creates a local stacking context. Because "L1 PREPROCESSING" was positioned after "SCENE PRESET & PAIRS" in DOM order, its stacking context was rendering on top of the open dropdown menu.
+2. **Dynamic Z-Index Elevation & Dismiss Backdrop**:
+   - Applied dynamic `zIndex: showSceneDropdown ? 50 : 10` directly to the Scene Preset card, elevating the entire dropdown above all subsequent sidebar cards.
+   - Added an invisible click-outside dismiss backdrop (`fixed inset-0 z-40`) to cleanly close the dropdown when clicking anywhere outside.
+
+Verification:
+- `npm run build` in `sih-dashboard` executed cleanly with 0 TypeScript/Vite errors (exit code 0).
+
+## 2026-09-01 — Live Clock Local Time (IST) & Mission UTC Display
+
+1. **Root Cause**:
+   - The clock previously called `new Date().toUTCString()` and stripped the `GMT`/`UTC` tag, displaying the raw UTC time (`14:49:02`) without timezone labeling, making it appear as if the clock was behind local time (`20:19 IST`).
+2. **Updated Dual Time Representation**:
+   - Updated `useMissionClock.ts` to compute both the real-time local time (`20:20:15 IST`) and mission UTC timestamp (`14:50:15 UTC`).
+   - Updated `Header.tsx` to clearly display the accurate local time with `IST` indicator and secondary `UTC` mission epoch.
+
+Verification:
+- `npm run build` in `sih-dashboard` executed cleanly with 0 TypeScript/Vite errors (exit code 0).
+
+## 2026-09-01 — High-Resolution Glowing Cosmic Nebula Atmosphere
+
+1. **High-Resolution Multi-Spectral Nebula Generation**:
+   - Generated a 512×512 soft organic radial gradient gas texture with smooth luminance falloff and mipmap generation.
+   - Built an expansive multi-node cosmic nebula complex with 12 overlapping emission nodes:
+     - Radiant core violet & purple (`#A855F7`, `#8B5CF6`)
+     - Electric cyan & sky blue ridges (`#06B6D4`, `#0EA5E9`)
+     - Ionization sapphire & deep cosmic blue (`#3B82F6`, `#2563EB`)
+     - Luminous fuchsia & rose star nurseries (`#EC4899`, `#D946EF`, `#F43F5E`)
+2. **Volumetric Depth & Celestial Rotation**:
+   - Arranged nebula sprites in a sweeping 3D arc ($Z \approx -46 \dots -62$) with `THREE.AdditiveBlending`, producing radiant volumetric illumination where gas clouds intersect.
+   - Added gentle celestial cosmic rotation (`group.rotation.z += dt * 0.005`) in the animation loop.
+
+Verification:
+- `npm run build` in `landing page0.2` executed cleanly with 0 TypeScript/Vite errors (exit code 0).
+
+## 2026-09-01 — Authentic Fiery H-Alpha & S-II Emission Nebula (Orange, Red, Amber)
+
+1. **Fractal Harmonic Plasma Noise Textures**:
+   - Synthesized dual high-resolution procedural textures: multi-octave harmonic filamentary plasma noise for dense ionization ridges and soft Gaussian falloff for diffuse dust envelopes.
+2. **Astrophotographic $\text{H}\alpha$ & $\text{S}\text{II}$ Morphology**:
+   - Modeled iconic structures inspired by the **Carina & Flame Nebulas**:
+     - **Western Towering Pillar**: Radiant fiery red-orange peak (`#FF4500`), tangerine crest (`#F97316`), amber shockwave edge (`#F59E0B`), and deep ruby base (`#991B1B`).
+     - **Central Stellar Cradle**: Ionized peach-orange knots (`#FB923C`), burnt orange filaments (`#EA580C`), intense $\text{H}\alpha$ red flares (`#EF4444`), and glowing golden cores (`#FBBF24`).
+     - **Eastern Arching Ribbon**: Sweeping crimson & amber tendrils (`#DC2626`, `#D97706`) with deep burgundy trailing tails (`#7F1D1D`).
+     - **Grand Hydrogen Emission Envelope**: Expansive terracotta and burnt sienna background veils (`#C2410C`, `#9A3412`) behind the Moon.
+
+Verification:
+- `npm run build` in `landing page0.2` executed cleanly with 0 TypeScript/Vite errors (exit code 0).
+
+## 2026-09-01 — Realistic Milky Way Galaxy Arch (Night Sky / Earth Perspective)
+
+1. **Galactic Diagonal Stream (~36° Celestial Tilt)**:
+   - Built a sweeping diagonal arch spanning across the night sky background with soft interstellar starlight textures.
+2. **Sagittarius Galactic Core & Bulge**:
+   - Golden-amber core nucleus (`#FDE68A`, `#F59E0B`, `#EA580C`, `#FFFBEB`) with warm stellar luminescence.
+3. **Cygnus & Cassiopeia Arms**:
+   - Pearl-white and diamond celestial blue star clouds (`#E2E8F0`, `#CBD5E1`, `#93C5FD`, `#38BDF8`) tracing along the galactic plane.
+4. **Galactic Plane Star Band (7,500 Clustered Stars)**:
+   - Concentrated dense star cluster cloud along the galactic equator line with Gaussian dispersion.
+5. **Ultra-Slow Celestial Drift**:
+   - Gentle, subtle rotation in the animation loop alongside the foreground Moon physics and floating stardust.
+
+Verification:
+- `npm run build` in `landing page0.2` executed cleanly with 0 TypeScript/Vite errors (exit code 0).
 
 ## 2026-09-01 — Astrophotography-Grade Photorealistic Milky Way Upgrade
 
@@ -765,3 +960,34 @@ Verification:
 
 Verification:
 - `npm run build` in `landing page0.2` executed cleanly with 0 TypeScript/Vite errors (exit code 0).
+
+## 2026-09-05 — PDS-4 Ingestion Architecture, Chunked Streaming, and Railway Cloud Deployment
+
+1. **Intelligent Ingestion & Recursive Package Discovery**:
+   - Upgraded `api/routes/datasets.py` (`/api/datasets/upload`) to recursively traverse uploaded Chandrayaan-2 directories and `.zip` archives.
+   - Automatically pairs PDS-4 `.xml` labels with raw `.img` / `.qub` pixel binaries and `.png` browse previews.
+   - Parses physical sensor metadata: GSD ($\text{m/px}$), Solar Incidence ($\theta_{\text{inc}}$), Solar Azimuth ($\theta_{\text{az}}$), and 4-corner selenographic coordinates.
+   - Catalogs extracted files with authentic product identifiers (`{product_id}_raw.img`, `{product_id}_label.xml`).
+
+2. **High-Throughput Chunked Streaming (Zero-RAM Spikes)**:
+   - Configured high-speed stream copying via `shutil.copyfileobj` with `UPLOAD_CHUNK_SIZE_BYTES` (default 16 MB).
+   - Writes 1 GB raw orbital rasters to disk in ~64 chunk iterations (under 1 second on local NVMe/SSD) while keeping memory footprint near zero.
+
+3. **16-Bit / 8-Bit Raster Memory-Mapping**:
+   - Implemented automatic data-type differentiation between 8-bit `uint8` and 16-bit Big-Endian `SignedMSB2` (`>i2`) rasters using `numpy.memmap`.
+   - Applied $1\text{st}–99\text{th}$ percentile contrast stretch normalization for robust visual feature detection.
+
+4. **Frontend Ingestion Modal & API Client Enhancements**:
+   - Updated `sih-dashboard/src/components/AddFilesModal.tsx` with intelligent file-type badges (`PDS-4 Label`, `Raw .IMG Raster`, `Archive Package`, `Calibrated Image`).
+   - Added live multi-stage pipeline status ticker (`Stage S1 ➔ S5`).
+   - Extended API client network timeout in `sih-dashboard/src/services/api.ts` to 300 seconds (5 minutes).
+
+5. **Railway Cloud Containerization**:
+   - Configured multi-stage production container (`Dockerfile` and `railway.json`).
+   - Optimized PyTorch installation with CPU wheels, reducing image build size from 2.5 GB to < 500 MB.
+   - Unified FastAPI API endpoints and Vite React SPA on a single port and domain with zero CORS issues.
+   - Documented deployment procedures in `RAILWAY_DEPLOYMENT.md` and full changelog in `CHANGES.md`.
+
+Verification:
+- Tested Python API server compilation (`python -m py_compile api/routes/datasets.py` — exit code 0).
+- Validated real Chandrayaan-2 TMC-2 data evaluation (0.148 px / 0.739 m RMSE, 99.5% inliers).

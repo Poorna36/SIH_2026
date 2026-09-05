@@ -7,36 +7,37 @@ This document specifies all functional features (F01 through F27), operational c
 
 ## F01. Product Ingestion and Geometric Calibration
 
-- Component: Layer 0 (`scripts/ingest.py`)
-- Description: Ingests ISRO PRADAN zip archives containing Level-2 calibrated products (.img and .xml for OHRC/TMC-2; QUB for IIRS). Original filenames are preserved. Translates rasters using ISIS `isisimport` and attaches SPICE pointing kernels using `spiceinit` or CSM. Fetches SPICE CK kernels over a 40-day window around image acquisition epoch.
+- Component: Layer 0 (`src/ingest/label_parser.py`, `api/routes/datasets.py`)
+- Description: Ingests ISRO PRADAN zip archives, folders, and standalone Level-2 calibrated products (`.img`, `.xml`, `.qub`). Recursively discovers PDS-4 metadata and pairs XML labels with raw raster binaries. Employs chunked streaming (`UPLOAD_CHUNK_SIZE_BYTES = 16 MB`) to eliminate RAM spikes during large file uploads. Automatically differentiates between 8-bit (`uint8`) and 16-bit Big-Endian (`SignedMSB2`) rasters using `numpy.memmap`, applying $1\text{st}–99\text{th}$ percentile contrast normalization.
 - Acceptance Criteria:
-  - Generates valid ISIS cube (`.cub`) for every processed archive.
-  - `spiceinit` completes with exit code 0; kernel ephemerides attach successfully.
-  - Computes four-corner geographic bounding footprint and records in `products.jsonl`.
-  - Extracts solar incidence angle, solar azimuth angle, acquisition UTC, and spatial resolution (GSD).
-  - Original ISRO filenames remain unaltered.
+  - Generates valid product metadata and structured artifacts (`{product_id}_raw.img`, `{product_id}_label.xml`).
+  - Memory-maps orbital rasters using $\le 2\text{ MB}$ active RAM during $1024 \times 1024$ crop extraction.
+  - Computes four-corner geographic bounding footprint and records in `manifest.jsonl`.
+  - Extracts solar incidence angle ($\theta_{\text{inc}}$), solar azimuth angle ($\theta_{\text{az}}$), acquisition UTC, and spatial resolution (GSD).
+  - Original ISRO filenames and metadata remain intact.
 
 ---
 
 ## F02. Automated Reference Patch Acquisition
 
-- Component: Layer 0 (`scripts/build_pairs.py`)
-- Description: Queries lunar reference datasets based on source product geographic footprints. For LRO NAC, queries the NASA Lunar ODE REST API. For LRO WAC, executes GDAL crops from local global mosaics. Bounding boxes are padded by 2x to 5x pointing uncertainty ($\sigma \approx 1000\text{ m}$) prior to querying.
+- Component: Layer 0 (`src/ingest/reference.py`, `api/routes/datasets.py`)
+- Description: Queries lunar reference datasets based on source product geographic footprints. For LRO NAC, queries the NASA Lunar ODE REST API. For LRO WAC, executes GDAL crops from local global mosaics. Bounding boxes are padded by 2x to 5x pointing uncertainty ($\sigma \approx 1000\text{ m}$) prior to querying. Supports dual-file source+reference uploads and pairs unreferenced strips with authentic calibrated baselines.
 - Acceptance Criteria:
   - Reference imagery acquired for >= 90% of valid source footprints.
   - Bounding box padding recorded in `PairRecord`.
-  - Fallback hierarchy executes in sequence: LRO NAC via ODE -> local WAC crop -> SELENE Moon Trek WMTS.
+  - Fallback hierarchy executes in sequence: LRO NAC via ODE -> local WAC crop -> SELENE Moon Trek WMTS -> Calibrated Baseline.
   - Reference type recorded as `NAC`, `WAC`, or `SELENE`.
 
 ---
 
 ## F03. Pair Catalog Manifest
 
-- Component: Layer 0 (`scripts/build_pairs.py`)
+- Component: Layer 0 (`api/routes/datasets.py`, `data/pairs/manifest.jsonl`)
 - Description: Writes comprehensive `PairRecord` entries to `data/pairs/manifest.jsonl` (one JSON record per line). Schema details are governed by `docs/CONTRACTS.md`.
 - Acceptance Criteria:
   - `manifest.jsonl` operates in append-only mode.
   - Every record defines `pair_id`, `sensor`, `gsd_m`, solar angles, `terrain_class`, `crater_density_per_km2`, `geo_cell`, and `split`.
+  - Ingested mission uploads update manifest dynamically and reflect immediately on the 3D Moon dashboard.
   - Skipped pairs are captured in `data/pairs/skipped.jsonl` with failure reasons.
 
 ---
