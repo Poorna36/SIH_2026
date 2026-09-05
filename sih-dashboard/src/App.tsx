@@ -160,6 +160,45 @@ export function App() {
   const [liveTelemetry, setLiveTelemetry] = useState<TelemetryData | null>(null);
   const [isLoadingScience, setIsLoadingScience] = useState<boolean>(false);
 
+  // Pair sensor metadata for dynamic labels in KeypointViewer
+  const [pairSensorInfo, setPairSensorInfo] = useState<{
+    srcSensor: string; srcGsd: string; refSensor: string; refGsd: string;
+  } | null>(null);
+
+  useEffect(() => {
+    // First try to find in already-fetched backendPairs list
+    const found = backendPairs.find(
+      (p) => p.pair_id === selectedScene.id || p.pair_id.toLowerCase() === selectedScene.id.toLowerCase()
+    );
+    if (found) {
+      setPairSensorInfo({
+        srcSensor: `CH-2 ${found.src.sensor}`,
+        srcGsd: `${found.src.gsd_m}m/px`,
+        refSensor: `LRO ${found.ref.type || 'NAC'}`,
+        refGsd: `${found.ref.gsd_m}m/px`,
+      });
+      return;
+    }
+    // Fallback: fetch directly from /api/datasets/{pair_id}
+    if (!isBackendOnline) return;
+    fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'}/api/datasets/${encodeURIComponent(selectedScene.id)}`)
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => {
+        if (!data) return;
+        const srcSensor = data?.src?.sensor || 'OHRC';
+        const srcGsd = data?.src?.gsd_m ? `${data.src.gsd_m}m/px` : '0.31m/px';
+        const refType = data?.ref?.type || 'NAC';
+        const refGsd = data?.ref?.gsd_m ? `${data.ref.gsd_m}m/px` : '0.5m/px';
+        setPairSensorInfo({
+          srcSensor: `CH-2 ${srcSensor}`,
+          srcGsd,
+          refSensor: `LRO ${refType}`,
+          refGsd,
+        });
+      })
+      .catch(() => setPairSensorInfo(null));
+  }, [selectedScene.id, backendPairs, isBackendOnline]);
+
   useEffect(() => {
     if (!isBackendOnline) {
       setLiveSlz(null);
@@ -375,7 +414,15 @@ export function App() {
           {/* Center 2D Registration & Findings View (Conditional overlay) */}
           {activeCenterTab === '2d' && (
             <div className="absolute inset-0 w-full h-full z-10 pt-20 pb-20 px-4 md:px-12 bg-black/85 backdrop-blur-2xl overflow-hidden pointer-events-auto">
-              <KeypointViewer key={selectedScene.id} pairId={selectedScene.id} rmsePx={activeTelemetry.rmsePx} />
+              <KeypointViewer
+                key={selectedScene.id}
+                pairId={selectedScene.id}
+                rmsePx={activeTelemetry.rmsePx}
+                srcSensor={pairSensorInfo?.srcSensor}
+                refSensor={pairSensorInfo?.refSensor}
+                srcGsd={pairSensorInfo?.srcGsd}
+                refGsd={pairSensorInfo?.refGsd}
+              />
             </div>
           )}
 

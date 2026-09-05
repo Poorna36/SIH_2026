@@ -166,35 +166,37 @@ export const MoonWorkbenchOverlay: React.FC<MoonWorkbenchOverlayProps> = ({
 
 
 
-      {/* ── 3. BOTTOM-CENTER: PRIMARY ACTION BAR ONLY (ZERO REDUNDANT BUTTONS) ── */}
-      <div className="absolute bottom-5 left-1/2 -translate-x-1/2 pointer-events-auto flex items-center gap-2.5 bg-black/75 hover:bg-black/85 backdrop-blur-2xl border border-white/15 p-1.5 sm:p-2 rounded-full shadow-[0_12px_40px_rgba(0,0,0,0.8)] transition-all">
+      {/* ── 3. BOTTOM-CENTER: PRIMARY ACTION BUTTON (STANDALONE RUN CO-REGISTRATION) ── */}
+      <div className="absolute bottom-5 left-1/2 -translate-x-1/2 pointer-events-auto flex items-center bg-black/75 hover:bg-black/85 backdrop-blur-2xl border border-white/15 p-1.5 sm:p-2 rounded-full shadow-[0_12px_40px_rgba(0,0,0,0.8)] transition-all">
         {/* Primary Action Button: Run Co-Registration */}
         <button
           onClick={onRunPipeline}
           disabled={isRunning}
-          className={`flex items-center gap-2 px-5 sm:px-6 py-2 rounded-full font-bold text-xs tracking-wide uppercase transition-all cursor-pointer active:scale-95 shadow-md ${
+          className={`flex items-center gap-2 px-6 py-2.5 rounded-full font-bold text-xs tracking-wide uppercase transition-all cursor-pointer active:scale-95 shadow-md ${
             isDone
               ? 'bg-white text-black shadow-lg hover:bg-white/90'
               : isRunning
               ? 'bg-white/10 text-white/40 cursor-not-allowed'
-              : 'bg-[#0071E3] hover:bg-[#0077ED] text-white shadow-[0_0_16px_rgba(0,113,227,0.4)]'
+              : 'bg-[#0071E3] hover:bg-[#0077ED] text-white shadow-[0_0_20px_rgba(0,113,227,0.5)]'
           }`}
         >
           {isDone ? (
-            <Check size={13} strokeWidth={3} className="text-emerald-600" />
+            <Check size={14} strokeWidth={3} className="text-emerald-600" />
           ) : (
-            <Play size={13} className={isRunning ? 'animate-spin' : 'fill-current'} />
+            <Play size={14} className={isRunning ? 'animate-spin' : 'fill-current'} />
           )}
           <span>{isDone ? 'Co-Registered' : isRunning ? 'Aligning...' : 'Run Co-Registration'}</span>
         </button>
+      </div>
 
-        <div className="w-px h-4 bg-white/20 mx-0.5" />
-
-        {/* Live Status Readout */}
-        <div className="px-3 py-1 text-xs text-white/60 font-mono flex items-center gap-1.5">
-          <span className={`w-1.5 h-1.5 rounded-full ${isBackendOnline ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)]' : 'bg-amber-400'}`} />
+      {/* ── 3b. MIDDLE-RIGHT: PIPELINE LIVE STATUS READOUT ── */}
+      <div className="absolute right-5 top-1/2 -translate-y-1/2 pointer-events-auto z-20 flex flex-col items-end gap-2">
+        <div className="flex items-center gap-2 bg-black/75 hover:bg-black/85 backdrop-blur-2xl border border-white/15 px-3.5 py-2 rounded-full shadow-[0_8px_32px_rgba(0,0,0,0.6)] font-mono text-xs text-white/80 transition-all">
+          <span className={`w-2 h-2 rounded-full ${isBackendOnline ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.9)] animate-pulse' : 'bg-amber-400'}`} />
           <span>Pipeline: <strong className="text-white">{isDone ? 'Registered' : isRunning ? 'Processing' : 'Ready'}</strong></span>
-          <span className="text-[10px] text-white/40 ml-1">({isBackendOnline ? 'LIVE' : 'CACHE'})</span>
+          <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/10 text-emerald-300 font-semibold tracking-wider">
+            {isBackendOnline ? 'LIVE' : 'OFFLINE'}
+          </span>
         </div>
       </div>
 

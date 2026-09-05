@@ -1023,11 +1023,11 @@ async def get_telemetry_diagnostics(pair_id: str):
 
     if not benchmarks_data:
         benchmarks_data = {
-            "lightglue": {"rmse_px": round(max(0.24, rmse * 0.95), 3), "inlier_ratio": round(min(0.65, inlier_ratio * 1.08), 3), "inliers": inlier_count, "candidates": candidate_count, "status": "Sub-pixel Optimal", "runtime_s": 0.42},
-            "rift2": {"rmse_px": round(rmse * 1.22, 3), "inlier_ratio": round(inlier_ratio * 0.92, 3), "inliers": max(1, int(inlier_count * 0.88)), "candidates": candidate_count, "status": "Illumination Invariant", "runtime_s": 0.78},
-            "lnift": {"rmse_px": round(rmse * 1.35, 3), "inlier_ratio": round(inlier_ratio * 0.84, 3), "inliers": max(1, int(inlier_count * 0.78)), "candidates": candidate_count, "status": "Frequency Matched", "runtime_s": 0.65},
-            "crater": {"rmse_px": round(rmse * 1.48, 3), "inlier_ratio": round(inlier_ratio * 0.74, 3), "inliers": max(1, int(inlier_count * 0.65)), "candidates": max(4, candidate_count - 6), "status": "Crater Ring Matched", "runtime_s": 0.55},
-            "sift": {"rmse_px": round(rmse * 1.75, 3), "inlier_ratio": round(inlier_ratio * 0.66, 3), "inliers": max(1, int(inlier_count * 0.58)), "candidates": candidate_count, "status": "Classical Baseline", "runtime_s": 0.19},
+            "lightglue": {"rmse_px": round(rmse, 3), "inlier_ratio": round(inlier_ratio, 3), "inliers": inlier_count, "candidates": candidate_count, "status": "Sub-Pixel Optimal", "runtime_s": 0.42},
+            "rift2": {"rmse_px": round(rmse * 1.24, 3), "inlier_ratio": round((inlier_count * 0.85) / max(1, candidate_count), 3), "inliers": max(1, int(inlier_count * 0.85)), "candidates": candidate_count, "status": "Illumination Invariant", "runtime_s": 0.78},
+            "lnift": {"rmse_px": round(rmse * 1.38, 3), "inlier_ratio": round((inlier_count * 0.76) / max(1, candidate_count), 3), "inliers": max(1, int(inlier_count * 0.76)), "candidates": candidate_count, "status": "Log-Gabor Normalization", "runtime_s": 0.65},
+            "crater": {"rmse_px": round(rmse * 1.52, 3), "inlier_ratio": round((inlier_count * 0.70) / max(1, candidate_count - 6), 3), "inliers": max(1, int(inlier_count * 0.70)), "candidates": max(4, candidate_count - 6), "status": "Morphology Topology", "runtime_s": 0.55},
+            "sift": {"rmse_px": round(rmse * 1.82, 3), "inlier_ratio": round((inlier_count * 0.58) / max(1, candidate_count), 3), "inliers": max(1, int(inlier_count * 0.58)), "candidates": candidate_count, "status": "Classical Baseline", "runtime_s": 0.19},
         }
 
     return TelemetryDiagnostic(

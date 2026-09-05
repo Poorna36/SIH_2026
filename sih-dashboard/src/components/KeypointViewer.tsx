@@ -1,16 +1,40 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Eye, MoveHorizontal, Grid3X3, Activity, Sparkles, ZoomIn } from 'lucide-react';
+import { Eye, MoveHorizontal, Grid3X3, Activity, Sparkles, ZoomIn, Layers, ChevronDown } from 'lucide-react';
 import type { KeypointMatch } from '../types';
 import { getKeypointMatches, API_BASE } from '../services/api';
 import { DeepZoomInspector } from './DeepZoomInspector';
 import ohrcImg from '../assets/images/ohrc_orbital_fallback.jpg';
 import lroImg from '../assets/images/lro_reference_baseline_1788336850293.jpg';
 
+// Derive sensor label + GSD from pair_id as a best-effort lookup
+function inferSensorLabel(pairId: string): { srcLabel: string; srcGsd: string; refLabel: string; refGsd: string } {
+  const pid = pairId.toLowerCase();
+  if (pid.includes('tmc')) {
+    return { srcLabel: 'CH-2 TMC-2', srcGsd: '5.0m/px', refLabel: 'LRO NAC', refGsd: '0.5m/px' };
+  }
+  if (pid.includes('iirs')) {
+    return { srcLabel: 'CH-2 IIRS', srcGsd: '80m/px', refLabel: 'LRO NAC', refGsd: '0.5m/px' };
+  }
+  // Custom uploads: try to read from ID prefix
+  if (pid.includes('custom') && pid.includes('tmc')) {
+    return { srcLabel: 'CH-2 TMC-2', srcGsd: '5.0m/px', refLabel: 'LRO NAC', refGsd: '0.5m/px' };
+  }
+  // Default: OHRC
+  return { srcLabel: 'CH-2 OHRC', srcGsd: '0.31m/px', refLabel: 'LRO NAC', refGsd: '0.5m/px' };
+}
+
+type LineFilter = 'both' | 'inliers' | 'outliers';
+
 interface KeypointViewerProps {
   pairId?: string;
   keypoints?: KeypointMatch[];
   onProbeCoord?: (x: number, y: number) => void;
   rmsePx?: number;
+  /** Override sensor labels if known from parent */
+  srcSensor?: string;
+  refSensor?: string;
+  srcGsd?: string;
+  refGsd?: string;
 }
 
 export const KeypointViewer: React.FC<KeypointViewerProps> = ({
@@ -18,7 +42,17 @@ export const KeypointViewer: React.FC<KeypointViewerProps> = ({
   keypoints: initialKeypoints,
   onProbeCoord,
   rmsePx,
+  srcSensor,
+  refSensor,
+  srcGsd: srcGsdProp,
+  refGsd: refGsdProp,
 }) => {
+  // Resolve sensor labels: prefer explicit props, fall back to pair-id inference
+  const inferred = inferSensorLabel(pairId);
+  const srcLabel = srcSensor ? srcSensor : inferred.srcLabel;
+  const refLabel = refSensor ? refSensor : inferred.refLabel;
+  const srcGsdLabel = srcGsdProp || inferred.srcGsd;
+  const refGsdLabel = refGsdProp || inferred.refGsd;
   const [keypointData, setKeypointData] = useState<KeypointMatch[]>(initialKeypoints || []);
 
   useEffect(() => {
@@ -51,10 +85,13 @@ export const KeypointViewer: React.FC<KeypointViewerProps> = ({
   }, [pairId, initialKeypoints]);
 
   const [sliderPos, setSliderPos] = useState<number>(50);
-  const [showInliers, setShowInliers] = useState<boolean>(true);
-  const [showOutliers, setShowOutliers] = useState<boolean>(true);
+  const [lineFilter, setLineFilter] = useState<LineFilter>('both');
+  const showInliers = lineFilter === 'both' || lineFilter === 'inliers';
+  const showOutliers = lineFilter === 'both' || lineFilter === 'outliers';
   const [viewMode, setViewMode] = useState<'side-by-side' | 'split' | 'checkerboard' | 'residuals' | 'deepzoom'>('side-by-side');
   const [hoveredMatch] = useState<KeypointMatch | null>(null);
+  const [showRawRef, setShowRawRef] = useState<boolean>(false);
+  const rawRefUrl = `${API_BASE}/api/datasets/${encodeURIComponent(pairId)}/image/ref?raw=1`;
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -384,31 +421,30 @@ export const KeypointViewer: React.FC<KeypointViewerProps> = ({
 
           <div className="hidden sm:block w-px h-3.5 bg-white/15" />
 
-          {/* Clean Scientific Keypoint Toggles (No Circles, Clean Typography) */}
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => setShowInliers(!showInliers)}
-              className={`text-xs font-medium transition-opacity cursor-pointer ${
-                showInliers
-                  ? 'text-emerald-400 opacity-100 hover:opacity-80'
-                  : 'text-white/30 line-through'
-              }`}
-              title="Toggle Inlier Correspondence Lines"
-            >
-              Inliers ({inlierCount})
-            </button>
-
-            <button
-              onClick={() => setShowOutliers(!showOutliers)}
-              className={`text-xs font-medium transition-opacity cursor-pointer ${
-                showOutliers
-                  ? 'text-rose-400 opacity-100 hover:opacity-80'
-                  : 'text-white/30 line-through'
-              }`}
-              title="Toggle Outlier Correspondence Lines"
-            >
-              Outliers ({outlierCount})
-            </button>
+          {/* 3-State Line Toggle: Both / Inliers / Outliers */}
+          <div className="flex items-center bg-white/[0.04] border border-white/10 p-0.5 rounded-full">
+            {([
+              { id: 'both' as LineFilter, label: `All (${keypointData.length})` },
+              { id: 'inliers' as LineFilter, label: `Inliers (${inlierCount})`, color: 'text-emerald-400' },
+              { id: 'outliers' as LineFilter, label: `Outliers (${outlierCount})`, color: 'text-rose-400' },
+            ] as { id: LineFilter; label: string; color?: string }[]).map((opt) => (
+              <button
+                key={opt.id}
+                onClick={() => setLineFilter(opt.id)}
+                className={`text-xs font-semibold px-2.5 py-0.5 rounded-full transition-all cursor-pointer ${
+                  lineFilter === opt.id
+                    ? opt.id === 'inliers'
+                      ? 'bg-emerald-500/20 text-emerald-400 shadow-sm'
+                      : opt.id === 'outliers'
+                      ? 'bg-rose-500/20 text-rose-400 shadow-sm'
+                      : 'bg-white text-black shadow-sm'
+                    : 'text-white/50 hover:text-white hover:bg-white/5'
+                }`}
+                title={`Show ${opt.label} only`}
+              >
+                {opt.label}
+              </button>
+            ))}
           </div>
 
           {/* Replay Transition */}
@@ -492,7 +528,7 @@ export const KeypointViewer: React.FC<KeypointViewerProps> = ({
               />
               <div className="absolute top-3 left-3 z-10 px-3 py-1 rounded-full bg-black/70 backdrop-blur-md border border-white/15 text-xs font-semibold text-white shadow-lg flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                <span>Source: CH-2 OHRC (0.5m/px)</span>
+                <span>Source · {srcLabel} ({srcGsdLabel})</span>
               </div>
             </div>
 
@@ -518,7 +554,7 @@ export const KeypointViewer: React.FC<KeypointViewerProps> = ({
               />
               <div className="absolute top-3 left-3 z-10 px-3 py-1 rounded-full bg-black/70 backdrop-blur-md border border-white/15 text-xs font-semibold text-white shadow-lg flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-[#2997FF]" />
-                <span>Reference: LRO NAC (0.5m/px)</span>
+                <span>Reference · {refLabel} ({refGsdLabel})</span>
               </div>
             </div>
 
@@ -569,10 +605,10 @@ export const KeypointViewer: React.FC<KeypointViewerProps> = ({
 
               {/* Floating labels */}
               <div className="absolute top-3 left-3 z-10 px-3 py-1 rounded-full bg-black/70 backdrop-blur-md border border-white/15 text-xs font-semibold text-white">
-                CH-2 OHRC (0.5m)
+                {srcLabel} ({srcGsdLabel})
               </div>
               <div className="absolute top-3 right-3 z-10 px-3 py-1 rounded-full bg-black/70 backdrop-blur-md border border-white/15 text-xs font-semibold text-white">
-                LRO NAC Baseline
+                {refLabel} Baseline
               </div>
 
               {/* Slider divider line */}
@@ -612,7 +648,7 @@ export const KeypointViewer: React.FC<KeypointViewerProps> = ({
                 }}
               />
               <div className="absolute top-3 left-3 z-10 px-3 py-1 rounded-full bg-black/70 backdrop-blur-md border border-white/15 text-xs font-semibold text-white">
-                Checkerboard Verification (64px Alternating Grids: OHRC vs LRO NAC)
+                Checkerboard Verification (64px Alternating Grids: {srcLabel} vs {refLabel})
               </div>
             </div>
           </div>
@@ -626,7 +662,7 @@ export const KeypointViewer: React.FC<KeypointViewerProps> = ({
                 key={`${pairId}-residuals-src`}
                 src={liveSrcUrl}
                 onError={(e) => { (e.target as HTMLImageElement).src = ohrcImg; }}
-                alt="CH-2 OHRC Base"
+                alt={`${srcLabel} Base`}
                 className="w-full h-full object-cover opacity-60"
               />
               <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/80 flex flex-col justify-between p-6">
@@ -654,10 +690,53 @@ export const KeypointViewer: React.FC<KeypointViewerProps> = ({
           <span className="text-white/20">·</span>
           <span>Estimator: <strong className="text-white">MAGSAC++ (10,000 iter)</strong></span>
         </div>
-        <div className="text-[11px] text-white/50 hidden sm:block">
-          Click image to probe 256-band reflectance signature
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowRawRef(!showRawRef)}
+            className="flex items-center gap-1.5 text-[11px] text-white/50 hover:text-white/90 transition-colors cursor-pointer"
+            title="Toggle LRO Raw Reference Image"
+          >
+            <Layers size={11} />
+            <span className="hidden sm:inline">{refLabel} Raw Reference</span>
+            <ChevronDown size={11} className={`transition-transform duration-300 ${showRawRef ? 'rotate-180' : ''}`} />
+          </button>
         </div>
       </div>
+
+      {/* ── RAW LRO REFERENCE IMAGE PANEL (collapsible) ── */}
+      {showRawRef && (
+        <div className="border-t border-white/10 bg-[#040507] shrink-0 overflow-hidden transition-all duration-500">
+          <div className="px-4 py-3 flex items-start gap-4">
+            {/* Label column */}
+            <div className="flex-shrink-0 flex flex-col justify-start pt-1 gap-1.5 w-40">
+              <div className="flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-[#2997FF]" />
+                <span className="text-xs font-bold text-white tracking-wide">{refLabel} Raw Reference</span>
+              </div>
+              <p className="text-[11px] text-white/45 leading-relaxed">
+                Unprocessed image fetched from {refLabel} archive before co-registration, histogram stretch, or angle correction.
+              </p>
+              <div className="mt-2 flex flex-col gap-1 text-[10px] text-white/40">
+                <span>Sensor: <strong className="text-white/70">{refLabel}</strong></span>
+                <span>GSD: <strong className="text-white/70">{refGsdLabel}</strong></span>
+                <span>State: <strong className="text-[#2997FF]/80">Pre-warp · No corrections</strong></span>
+              </div>
+            </div>
+            {/* Image */}
+            <div className="flex-1 relative rounded-xl overflow-hidden border border-white/10 bg-black" style={{ height: '200px' }}>
+              <img
+                src={rawRefUrl}
+                onError={(e) => { (e.target as HTMLImageElement).src = lroImg; }}
+                alt={`${refLabel} Raw Reference`}
+                className="w-full h-full object-cover"
+              />
+              <div className="absolute top-2 left-2 px-2 py-0.5 rounded-full bg-black/75 backdrop-blur-sm border border-white/10 text-[10px] font-semibold text-[#2997FF]">
+                RAW · {refLabel}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

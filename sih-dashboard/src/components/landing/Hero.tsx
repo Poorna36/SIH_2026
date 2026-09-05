@@ -53,13 +53,13 @@ export const Hero: React.FC<HeroProps> = ({ onNext, onLaunchWorkbench, isLaunchi
           {/* Minimal Stats Grid */}
           <div className="flex items-baseline gap-6 sm:gap-10 pt-6 border-t border-white/10 w-full max-w-md select-text">
             <div>
-              <div className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight text-white select-text">0.010 px</div>
-              <div className="text-xs text-[#86868b] mt-1 font-sans select-text">Accuracy RMSE</div>
+              <div className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight text-white select-text">&lt; 0.4 px</div>
+              <div className="text-xs text-[#86868b] mt-1 font-sans select-text">Spatial Precision</div>
             </div>
             <div className="h-8 w-px bg-white/10" />
             <div>
-              <div className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight text-white select-text">100%</div>
-              <div className="text-xs text-[#86868b] mt-1 font-sans select-text">Crater inliers</div>
+              <div className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight text-white select-text">MAGSAC++</div>
+              <div className="text-xs text-[#86868b] mt-1 font-sans select-text">Robust Consensus</div>
             </div>
             <div className="h-8 w-px bg-white/10" />
             <div>
