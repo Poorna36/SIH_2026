@@ -37,7 +37,6 @@ interface MoonWorkbenchOverlayProps {
   onOpenAddFiles?: () => void;
   pipelineStage: PipelineStage;
   onRunPipeline: () => void;
-  telemetryRmse?: number;
   isBackendOnline?: boolean;
 }
 
@@ -58,7 +57,6 @@ export const MoonWorkbenchOverlay: React.FC<MoonWorkbenchOverlayProps> = ({
   onOpenAddFiles,
   pipelineStage,
   onRunPipeline,
-  telemetryRmse = 0.42,
   isBackendOnline = true,
 }) => {
   const isRunning = pipelineStage !== PipelineStage.Idle && pipelineStage !== PipelineStage.Done;
@@ -192,11 +190,11 @@ export const MoonWorkbenchOverlay: React.FC<MoonWorkbenchOverlayProps> = ({
 
         <div className="w-px h-4 bg-white/20 mx-0.5" />
 
-        {/* Engine Status Readout */}
+        {/* Live Status Readout */}
         <div className="px-3 py-1 text-xs text-white/60 font-mono flex items-center gap-1.5">
           <span className={`w-1.5 h-1.5 rounded-full ${isBackendOnline ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)]' : 'bg-amber-400'}`} />
-          <span className="text-white font-medium">{isDone ? 'Registration Active' : isRunning ? 'Processing Pipeline' : 'Engine Ready'}</span>
-          <span className="text-[10px] text-white/40 ml-1">({isBackendOnline ? 'ONLINE' : 'STANDBY'})</span>
+          <span>Pipeline: <strong className="text-white">{isDone ? 'Registered' : isRunning ? 'Processing' : 'Ready'}</strong></span>
+          <span className="text-[10px] text-white/40 ml-1">({isBackendOnline ? 'LIVE' : 'CACHE'})</span>
         </div>
       </div>
 

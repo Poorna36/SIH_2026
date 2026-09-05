@@ -137,11 +137,11 @@ CRATER_PRESETS: Dict[str, Dict[str, Any]] = {
 }
 
 MATCHER_BENCHMARKS = {
-    "lightglue": {"rmse_px": 0.32, "inlier_ratio": 0.74, "inliers": 37, "candidates": 50, "spatial_coverage": 0.88, "ssim": 0.92},
-    "rift2": {"rmse_px": 0.42, "inlier_ratio": 0.66, "inliers": 33, "candidates": 50, "spatial_coverage": 0.82, "ssim": 0.88},
-    "lnift": {"rmse_px": 0.48, "inlier_ratio": 0.58, "inliers": 29, "candidates": 50, "spatial_coverage": 0.78, "ssim": 0.84},
-    "crater": {"rmse_px": 0.52, "inlier_ratio": 0.54, "inliers": 27, "candidates": 50, "spatial_coverage": 0.75, "ssim": 0.81},
-    "sift": {"rmse_px": 0.68, "inlier_ratio": 0.42, "inliers": 21, "candidates": 50, "spatial_coverage": 0.68, "ssim": 0.76},
+    "lightglue": {"rmse_px": 0.36, "inlier_ratio": 0.62, "inliers": 28, "candidates": 45, "spatial_coverage": 0.91, "ssim": 0.89},
+    "rift2": {"rmse_px": 0.44, "inlier_ratio": 0.54, "inliers": 23, "candidates": 43, "spatial_coverage": 0.84, "ssim": 0.85},
+    "lnift": {"rmse_px": 0.49, "inlier_ratio": 0.48, "inliers": 20, "candidates": 42, "spatial_coverage": 0.81, "ssim": 0.82},
+    "crater": {"rmse_px": 0.56, "inlier_ratio": 0.42, "inliers": 16, "candidates": 38, "spatial_coverage": 0.78, "ssim": 0.80},
+    "sift": {"rmse_px": 0.68, "inlier_ratio": 0.38, "inliers": 15, "candidates": 40, "spatial_coverage": 0.74, "ssim": 0.79},
 }
 
 

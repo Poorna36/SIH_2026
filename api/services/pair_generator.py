@@ -164,7 +164,7 @@ def compute_real_keypoints(src: np.ndarray, ref: np.ndarray) -> List[Dict[str, A
 
                     dx = round(float(r_pt[0] - s_pt[0]), 2)
                     dy = round(float(r_pt[1] - s_pt[1]), 2)
-                    is_in = added < 20
+                    is_in = added < 14
                     matches_out.append({
                         "id": start_id + added,
                         "src_xy": [round(float(s_pt[0]), 2), round(float(s_pt[1]), 2)],

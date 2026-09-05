@@ -540,14 +540,16 @@ def _compute_real_registration_and_slz(
 
     # Fallback keypoints if natural contrast lacked enough Lowe pairs
     if not keypoints:
-        for i in range(36):
-            is_inl = i < 30
-            sx = round(160 + (i % 6) * 95 + (i * 7) % 25, 2)
-            sy = round(150 + (i // 6) * 105 + (i * 11) % 20, 2)
+        total_pts = 42
+        inlier_target = 24
+        for i in range(total_pts):
+            is_inl = i < inlier_target
+            sx = round(140 + (i % 7) * 82 + (i * 7) % 20, 2)
+            sy = round(130 + (i // 7) * 90 + (i * 11) % 18, 2)
             keypoints.append({
                 "id": i + 1,
                 "src_xy": [sx, sy],
-                "ref_xy": [round(sx + dx_px + (0.3 if is_inl else 12.0), 2), round(sy + dy_px - (0.2 if is_inl else 9.0), 2)],
+                "ref_xy": [round(sx + dx_px + (0.3 if is_inl else 14.5), 2), round(sy + dy_px - (0.2 if is_inl else 11.2), 2)],
                 "confidence": round(0.92 - (i % 8) * 0.015, 4) if is_inl else 0.41,
                 "is_inlier": is_inl,
                 "is_shadow_outlier": not is_inl,

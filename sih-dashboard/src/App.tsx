@@ -36,12 +36,12 @@ const DEFAULT_SCENE: ScenePreset = {
 };
 
 const DEFAULT_TELEMETRY: TelemetryData = {
-  rmsePx: 0.34,
-  ssim: 0.91,
-  inlierRatio: 0.72,
-  inlierCount: 36,
-  candidateCount: 50,
-  spatialCoverage: 0.84,
+  rmsePx: 0.36,
+  ssim: 0.89,
+  inlierRatio: 0.58,
+  inlierCount: 26,
+  candidateCount: 45,
+  spatialCoverage: 0.82,
   gridDensityStd: 2.3,
   refinementGainPx: 0.23,
   solarIncidenceDeg: 68.2,
@@ -411,7 +411,6 @@ export function App() {
             onOpenAddFiles={() => setIsAddFilesOpen(true)}
             pipelineStage={pipelineStage}
             onRunPipeline={handleRunPipeline}
-            telemetryRmse={activeTelemetry.rmsePx}
             isBackendOnline={isBackendOnline}
           />
 
