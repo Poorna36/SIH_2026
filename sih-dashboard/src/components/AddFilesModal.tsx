@@ -7,6 +7,12 @@ interface AddFilesModalProps {
   isOpen: boolean;
   onClose: () => void;
   onPairCreated?: (newScene: ScenePreset) => void;
+  onStartUpload?: (
+    files: File[],
+    pairName: string,
+    sensor: string,
+    roles: ('src' | 'ref')[]
+  ) => void;
 }
 
 /**
@@ -84,6 +90,7 @@ export const AddFilesModal: React.FC<AddFilesModalProps> = ({
   isOpen,
   onClose,
   onPairCreated,
+  onStartUpload,
 }) => {
   const [dragOver, setDragOver] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
@@ -140,6 +147,17 @@ export const AddFilesModal: React.FC<AddFilesModalProps> = ({
   const handleUpload = async () => {
     if (selectedFiles.length === 0) {
       setUploadError('Please select at least one lunar mission file or folder to ingest.');
+      return;
+    }
+
+    if (onStartUpload) {
+      onStartUpload(selectedFiles, pairName, sensor, fileRoles);
+      setSelectedFiles([]);
+      setFileRoles([]);
+      setPairName('');
+      setUploadError(null);
+      setUploadSuccess(null);
+      onClose();
       return;
     }
 

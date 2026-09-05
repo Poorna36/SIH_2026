@@ -8,7 +8,7 @@ import { ResultsView } from './components/ResultsView';
 import { AddFilesModal } from './components/AddFilesModal';
 import { WebGlMoonViewer } from './components/landing/WebGlMoonViewer';
 import { useBackendData } from './hooks/useBackendData';
-import { getSlzData, getSpectralData, getTelemetryData } from './services/api';
+import { getSlzData, getSpectralData, getTelemetryData, uploadMissionFiles } from './services/api';
 import {
   PipelineStage,
   type PipelineOptions,
@@ -18,6 +18,7 @@ import {
   type TelemetryData,
   type SLZDiagnostic,
   type SpectralData,
+  type ActiveProcessingState,
 } from './types';
 
 const DEFAULT_SCENE: ScenePreset = {
@@ -130,6 +131,7 @@ export function App() {
   const [isEngineInspectorOpen, setIsEngineInspectorOpen] = useState(false);
   const [isAddFilesOpen, setIsAddFilesOpen] = useState(false);
   const [cameraZoom, setCameraZoom] = useState<number>(3.8);
+  const [processingState, setProcessingState] = useState<ActiveProcessingState | null>(null);
 
   const handleLaunchFromLanding = () => {
     setAppMode('workbench');
@@ -385,6 +387,112 @@ export function App() {
     }
   };
 
+  // Ingest & background processing handler for user-provided folders/files
+  const handleStartUpload = async (
+    files: File[],
+    pairName: string,
+    sensor: string,
+    fileRoles: ('src' | 'ref')[]
+  ) => {
+    // 1. Instantly return user to the home page with the Moon
+    setAppMode('workbench');
+    setActiveCenterTab('3d');
+    setIsAddFilesOpen(false);
+    window.location.hash = 'workbench';
+
+    const displayName = pairName.trim() || (files[0] ? files[0].name.replace(/\.[^/.]+$/, '') : 'Mission Dataset');
+
+    // 2. Set processing state and pipeline stage
+    setProcessingState({
+      status: 'processing',
+      pairName: displayName,
+      fileCount: files.length,
+      stageMessage: 'Memmapping PDS-4 files & validating metadata...',
+      newScene: null,
+    });
+    setPipelineStage(PipelineStage.Ingesting);
+
+    try {
+      // Background upload
+      const res = await uploadMissionFiles(files, pairName, sensor, fileRoles);
+
+      if (res && res.status === 'success' && res.pair_id) {
+        const newScene: ScenePreset = {
+          id: res.pair_id,
+          name: res.name || res.pair_id.replace(/_/g, ' ').toUpperCase(),
+          lat: res.pair?.latitude_center_deg ?? -70.0,
+          lon: res.pair?.longitude_center_deg ?? 35.0,
+          height: 80000,
+          terrainClass: (res.pair?.terrain_class as any) ?? 'polar_highland',
+          solarIncidenceDeg: 66.0,
+          solarAzimuthDeg: 175.0,
+          gsdM: sensor === 'OHRC' ? 0.31 : 0.50,
+          description: `User-ingested mission pair (${files.length} files, verified ${sensor})`,
+        };
+
+        // Advance pipeline stage and status message
+        setProcessingState((prev) => ({
+          ...prev,
+          status: 'processing',
+          stageMessage: 'Sub-pixel co-registration & MAGSAC...',
+        }));
+        setPipelineStage(PipelineStage.MAGSAC);
+
+        if (isBackendOnline) {
+          try {
+            await runPipelineOnPair({
+              pair_id: res.pair_id,
+              matcher: options.activeMatcher,
+              options: {
+                percentile_clipping: options.percentileClipping,
+                clahe: options.clahe,
+                morphological_gradients: options.morphologicalGradients,
+                pca_band_reduction: options.pcaBandReduction,
+              },
+            });
+          } catch (pipelineErr) {
+            console.warn('Post-upload pipeline run warning:', pipelineErr);
+          }
+        }
+
+        setPipelineStage(PipelineStage.Done);
+        refreshData();
+
+        // 3. Set completed state with newScene for complete processing transition
+        setProcessingState({
+          status: 'completed',
+          pairName: res.name || displayName,
+          fileCount: files.length,
+          stageMessage: 'Co-registration complete. Ready for inspection.',
+          newScene,
+        });
+      } else {
+        throw new Error(res?.message || 'Failed to ingest mission files');
+      }
+    } catch (err: any) {
+      console.error('Mission file ingestion failed:', err);
+      setPipelineStage(PipelineStage.Idle);
+      setProcessingState({
+        status: 'error',
+        pairName: displayName,
+        fileCount: files.length,
+        errorMessage: err?.message || 'Failed to process files. Ensure backend is running.',
+      });
+    }
+  };
+
+  const handleCompleteProcessing = () => {
+    if (processingState?.newScene) {
+      setSelectedScene(processingState.newScene);
+    }
+    setActiveCenterTab('2d');
+    setProcessingState(null);
+  };
+
+  const handleDismissProcessing = () => {
+    setProcessingState(null);
+  };
+
   return (
     <div className="relative w-full h-screen overflow-hidden bg-black text-white font-sans select-none">
       {/* Spatial WebGL 3D Lunar Engine (Always mounted in background for both Landing & Workbench) */}
@@ -459,6 +567,9 @@ export function App() {
             pipelineStage={pipelineStage}
             onRunPipeline={handleRunPipeline}
             isBackendOnline={isBackendOnline}
+            processingState={processingState}
+            onCompleteProcessing={handleCompleteProcessing}
+            onDismissProcessing={handleDismissProcessing}
           />
 
           {/* Modern Aerospace Modal 1: Lunar Target Command Palette */}
@@ -527,38 +638,11 @@ export function App() {
             <AddFilesModal
               isOpen={isAddFilesOpen}
               onClose={() => setIsAddFilesOpen(false)}
-              onPairCreated={async (newScene) => {
+              onStartUpload={handleStartUpload}
+              onPairCreated={(newScene) => {
                 setSelectedScene(newScene);
                 setActiveCenterTab('2d');
                 refreshData();
-
-                if (isBackendOnline) {
-                  setPipelineStage(PipelineStage.Ingesting);
-                  const t1 = setTimeout(() => setPipelineStage(PipelineStage.GraphMatching), 500);
-                  const t2 = setTimeout(() => setPipelineStage(PipelineStage.MAGSAC), 1000);
-                  const t3 = setTimeout(() => setPipelineStage(PipelineStage.Warping), 1500);
-
-                  try {
-                    await runPipelineOnPair({
-                      pair_id: newScene.id,
-                      matcher: options.activeMatcher,
-                      options: {
-                        percentile_clipping: options.percentileClipping,
-                        clahe: options.clahe,
-                        morphological_gradients: options.morphologicalGradients,
-                        pca_band_reduction: options.pcaBandReduction,
-                      },
-                    });
-                    refreshData();
-                  } catch (err) {
-                    console.warn('Auto-run pipeline on ingested pair failed:', err);
-                  } finally {
-                    clearTimeout(t1);
-                    clearTimeout(t2);
-                    clearTimeout(t3);
-                    setPipelineStage(PipelineStage.Done);
-                  }
-                }
               }}
             />
           </div>

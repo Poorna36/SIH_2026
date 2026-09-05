@@ -1,9 +1,16 @@
 import React from 'react';
 import {
   Plus, Minus, RotateCcw, Globe, GitCommit, FlaskConical,
-  ChevronDown, Play, Check, Sliders, Upload
+  ChevronDown, Play, Check, Sliders, Upload,
+  RefreshCw, CheckCircle2, ArrowRight, AlertTriangle, X
 } from 'lucide-react';
-import { PipelineStage, type ScenePreset, type LayerVisibility, type PipelineOptions } from '../types';
+import {
+  PipelineStage,
+  type ScenePreset,
+  type LayerVisibility,
+  type PipelineOptions,
+  type ActiveProcessingState
+} from '../types';
 import { MapLayerControl } from './MapLayerControl';
 
 export interface ProbedLocation {
@@ -38,6 +45,9 @@ interface MoonWorkbenchOverlayProps {
   pipelineStage: PipelineStage;
   onRunPipeline: () => void;
   isBackendOnline?: boolean;
+  processingState?: ActiveProcessingState | null;
+  onCompleteProcessing?: () => void;
+  onDismissProcessing?: () => void;
 }
 
 export const MoonWorkbenchOverlay: React.FC<MoonWorkbenchOverlayProps> = ({
@@ -58,6 +68,9 @@ export const MoonWorkbenchOverlay: React.FC<MoonWorkbenchOverlayProps> = ({
   pipelineStage,
   onRunPipeline,
   isBackendOnline = true,
+  processingState,
+  onCompleteProcessing,
+  onDismissProcessing,
 }) => {
   const isRunning = pipelineStage !== PipelineStage.Idle && pipelineStage !== PipelineStage.Done;
   const isDone = pipelineStage === PipelineStage.Done;
@@ -190,7 +203,7 @@ export const MoonWorkbenchOverlay: React.FC<MoonWorkbenchOverlayProps> = ({
       </div>
 
       {/* ── 3b. MIDDLE-RIGHT: PIPELINE LIVE STATUS READOUT ── */}
-      <div className="absolute right-5 top-1/2 -translate-y-1/2 pointer-events-auto z-20 flex flex-col items-end gap-2">
+      <div className="absolute right-5 top-1/2 -translate-y-1/2 pointer-events-auto z-20 flex flex-col items-end gap-2.5">
         <div className="flex items-center gap-2 bg-black/75 hover:bg-black/85 backdrop-blur-2xl border border-white/15 px-3.5 py-2 rounded-full shadow-[0_8px_32px_rgba(0,0,0,0.6)] font-mono text-xs text-white/80 transition-all">
           <span className={`w-2 h-2 rounded-full ${isBackendOnline ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.9)] animate-pulse' : 'bg-amber-400'}`} />
           <span>Pipeline: <strong className="text-white">{isDone ? 'Registered' : isRunning ? 'Processing' : 'Ready'}</strong></span>
@@ -198,6 +211,85 @@ export const MoonWorkbenchOverlay: React.FC<MoonWorkbenchOverlayProps> = ({
             {isBackendOnline ? 'LIVE' : 'OFFLINE'}
           </span>
         </div>
+
+        {/* Processing readout card below Pipeline Ready */}
+        {processingState && processingState.status !== 'idle' && (
+          <div className="w-80 bg-[#0B0D13]/92 hover:bg-[#0B0D13]/98 backdrop-blur-2xl border border-white/20 rounded-2xl p-4 shadow-[0_16px_40px_rgba(0,0,0,0.85)] flex flex-col gap-2.5 animate-in fade-in slide-in-from-right-3 duration-200 transition-all">
+            {/* Top row: Status header */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                {processingState.status === 'processing' && (
+                  <RefreshCw size={14} className="animate-spin text-[#2997FF]" />
+                )}
+                {processingState.status === 'completed' && (
+                  <CheckCircle2 size={16} className="text-emerald-400 drop-shadow-[0_0_8px_rgba(52,211,153,0.8)]" />
+                )}
+                {processingState.status === 'error' && (
+                  <AlertTriangle size={15} className="text-red-400" />
+                )}
+                <span className="text-xs font-bold text-white tracking-wide">
+                  {processingState.status === 'processing' && 'Processing Files...'}
+                  {processingState.status === 'completed' && 'Processing Complete'}
+                  {processingState.status === 'error' && 'Processing Error'}
+                </span>
+              </div>
+              {onDismissProcessing && (
+                <button
+                  onClick={onDismissProcessing}
+                  className="p-1 rounded-full text-white/40 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+                  title="Dismiss"
+                >
+                  <X size={12} />
+                </button>
+              )}
+            </div>
+
+            {/* Middle: Pair Details */}
+            <div className="flex flex-col gap-1">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-semibold text-white/90 truncate max-w-[190px]">
+                  {processingState.pairName || 'Mission Pair'}
+                </span>
+                {processingState.fileCount !== undefined && processingState.fileCount > 0 && (
+                  <span className="font-mono text-[10px] text-[#2997FF] bg-[#0071E3]/20 px-2 py-0.5 rounded-full border border-[#2997FF]/30">
+                    {processingState.fileCount} {processingState.fileCount === 1 ? 'file' : 'files'}
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] text-white/60">
+                {processingState.errorMessage || processingState.stageMessage || 'Analyzing lunar telemetry...'}
+              </p>
+            </div>
+
+            {/* Processing Progress Bar */}
+            {processingState.status === 'processing' && (
+              <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden mt-0.5">
+                <div className="h-full bg-gradient-to-r from-[#0071E3] via-[#2997FF] to-[#64D2FF] rounded-full animate-pulse w-3/4 transition-all duration-500" />
+              </div>
+            )}
+
+            {/* Complete Processing Action Button */}
+            {processingState.status === 'completed' && onCompleteProcessing && (
+              <button
+                onClick={onCompleteProcessing}
+                className="mt-1 w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-[#0071E3] to-[#2997FF] hover:from-[#0077ED] hover:to-[#409CFF] text-white font-bold text-xs tracking-wider uppercase flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(0,113,227,0.6)] hover:shadow-[0_0_28px_rgba(41,151,255,0.9)] transition-all cursor-pointer active:scale-95 group border border-white/20"
+              >
+                <span>Complete Processing</span>
+                <ArrowRight size={14} className="group-hover:translate-x-1 transition-transform" />
+              </button>
+            )}
+
+            {/* Error Dismiss Button */}
+            {processingState.status === 'error' && onDismissProcessing && (
+              <button
+                onClick={onDismissProcessing}
+                className="mt-1 w-full py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white/80 font-semibold text-xs transition-colors cursor-pointer"
+              >
+                Dismiss
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* ── 4. BOTTOM-LEFT: FLOATING LAYER CONTROL CAPSULE ── */}

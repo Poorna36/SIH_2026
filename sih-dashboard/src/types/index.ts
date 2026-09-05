@@ -16,6 +16,15 @@ export const PipelineStage = {
 
 export type PipelineStage = (typeof PipelineStage)[keyof typeof PipelineStage];
 
+export interface ActiveProcessingState {
+  status: 'idle' | 'processing' | 'completed' | 'error';
+  pairName?: string;
+  fileCount?: number;
+  stageMessage?: string;
+  newScene?: ScenePreset | null;
+  errorMessage?: string;
+}
+
 export interface ScenePreset {
   id: string;
   name: string;
